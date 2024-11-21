@@ -20,7 +20,6 @@ class StyleMixer:
     _has_input_transform: bool
     _noise_mode: str
 
-    _pinned_bufs: dict  # Custom buffer for GPU? NVIDIA stuff I guess.
     _mix_dims: Tensor  # Range for dimensions to mix styles with.
 
     def __init__(
@@ -75,11 +74,11 @@ class StyleMixer:
             self._generator.synthesis.input.transform.copy_(torch.from_numpy(m))
 
         w_avg = self._generator.mapping.w_avg
-        wn_tensors = torch.stack(candidates.wn_candidates.w_tensors) - w_avg
+        wn_tensors = torch.vstack(candidates.wn_candidates.w_tensors) - w_avg
 
         """Get w0 vector."""
         w0_weights = candidates.w0_candidates.weights,
-        assert sum(w0_weights) == 1, f"Error: w0 weight do not sum up to one: {w0_weights}."
+        assert all((sum(w) == 1 for w in w0_weights)) , f"Error: w0 weight do not sum up to one: {w0_weights}."
         w0_weight_tensor = torch.as_tensor(w0_weights, device=self._device)[:, None, None]
         w0_tensors = torch.stack(candidates.w0_candidates.w_tensors) - w_avg
         w0 = (w0_tensors * w0_weight_tensor).sum(dim=0)  # Initialize base using w0 seeds.
@@ -90,10 +89,9 @@ class StyleMixer:
         assert (lmd := len(self._mix_dims)) == (
             lsmx := len(sm_cond)
         ), f"Error SMX condition array is not the same size as the mix dimensions ({lmd} vs {lsmx}). This might be due to a mismatch in genome size."
-        w[:, self._mix_dims] += (
-                wn_tensors[sm_cond, self._mix_dims, :] * smw_tensor
-                + w0[:, self._mix_dims] * (1 - smw_tensor)
-        )
+        comp1 = wn_tensors[sm_cond, self._mix_dims, :] * smw_tensor
+
+        w[:, self._mix_dims] += comp1 + w0[:, self._mix_dims] * (1 - smw_tensor)
         w += w_avg
 
         torch.manual_seed(random_seed)
@@ -146,17 +144,6 @@ class StyleMixer:
         return image
 
     # ------------------ Copied from https://github.com/NVlabs/stylegan3/blob/main/viz/renderer.py -----------------------
-    def _get_pinned_buf(self, ref):
-        key = (tuple(ref.shape), ref.dtype)
-        buf = self._pinned_bufs.get(key, None)
-        if buf is None:
-            buf = torch.empty(ref.shape, dtype=ref.dtype).pin_memory()
-            self._pinned_bufs[key] = buf
-        return buf
-
-    def _to_device(self, buf):
-        return self._get_pinned_buf(buf).copy_(buf).to(self._device)
-
     @staticmethod
     def _run_synthesis_net(net, *args, capture_layer=None, **kwargs):  # => out, layers
         submodule_names = {mod: name for name, mod in net.named_modules()}

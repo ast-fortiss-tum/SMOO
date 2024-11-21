@@ -7,7 +7,6 @@ from itertools import product
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from scipy.spatial.distance import wminkowski
 from torch import Tensor, nn
 
 import wandb
@@ -15,7 +14,7 @@ import wandb
 from ._experiment_config import ExperimentConfig
 from .criteria import DefaultArguments
 from .learner import Learner
-from .style_mixing import CandidateList, MixCandidate, StyleMixer
+from .manipulator import CandidateList, MixCandidate, StyleMixer
 
 
 class NeuralTester:
@@ -68,36 +67,6 @@ class NeuralTester:
         self._predictor.eval()
         self._softmax = torch.nn.Softmax(dim=1)
 
-    def _generate_seeds(self, amount: int, cls: int) -> tuple[list[Tensor], list[Tensor], list[Tensor], int]:
-        """
-        Generate seeds for a specific class.
-
-        :param amount: The amount of seeds to be generated.
-        :param cls: The class to be generated.
-        :returns: The w vectors generated, the corresponding images, confidence values and the amount of trials needed.
-        """
-        ws: list[Tensor] = []
-        imgs: list[Tensor] = []
-        y_hats: list[Tensor] = []
-
-        logging.info(f"Generate seed(s) for class: {cls}.")
-        # For logging purposes to see how many samples we need to find valid seed.
-        trials = 0
-        while len(ws) < amount:
-            trials += 1
-            # We generate w latent vector.
-            w = self._mixer.get_w(self._get_time_seed(), cls)
-            # We generate and transform the image to RGB if it is in Grayscale.
-            img = self._assure_rgb(self._mixer.get_image(w))
-            y_hat = self._predictor(img.unsqueeze(0))
-
-            # We are only interested in candidate if the prediction matches the label
-            if y_hat.argmax() == cls:
-                ws.append(w)
-        logging.info(f"\tFound {amount} valid seed(s) after: {trials} iterations.")
-        return ws, imgs, y_hats,trials
-
-
     def test(self):
         """Testing the predictor for its decision boundary using a set of (test!) Inputs."""
         spc, nc = self._config.samples_per_class, self._config.classes
@@ -136,30 +105,33 @@ class NeuralTester:
             logging.info(f"Running Search-Algorithm for {self._config.generations} generations.")
             for _ in range(self._config.generations):
                 # We define the inner loop with its parameters.
-                images, fitness = self._inner_loop(candidates, class_idx, second)
+                images, fitness, preds = self._inner_loop(candidates, class_idx, second)
                 # Assign fitness to current population and additional data (in our case images).
-                self._learner.assign_fitness(fitness, data=images)
+                self._learner.assign_fitness(fitness, images, preds.tolist())
                 self._learner.new_population()
             # Evaluate the last generation.
-            images, fitness = self._inner_loop(candidates, class_idx, second)
-            self._learner.assign_fitness(fitness, data=images)
+            images, fitness, preds = self._inner_loop(candidates, class_idx, second)
+            self._learner.assign_fitness(fitness, images, preds.tolist())
 
             logging.info(
                 f"\tBest candidate(s) have a fitness of: {', '.join([str(c.fitness) for c in self._learner.best_candidates])}"
             )
-            wandb.summary["boundary_to"] = second.item()
+            wandb.summary["expected_boundary"] = second.item()
 
             wandb.log(
                 {
                     "best_candidates": wandb.Table(
                         columns=[metric.name for metric in self._config.metrics]
                         + [f"Genome_{i}" for i in range(*self._config.mix_dim_range)]
-                        + ["Image"],
+                        + ["Image"]
+                        + [f"Conf_{i}" for i in range(self._config.classes)]
+                        ,
                         data=[
                             [
                                 *c.fitness,
                                 *c.solution,
-                                wandb.Image(c.data),
+                                wandb.Image(c.data[0]),
+                                *c.data[1],
                             ]
                             for c in self._learner.best_candidates
                         ],
@@ -174,14 +146,14 @@ class NeuralTester:
         candidates: CandidateList,
         y: int,
         y2: int,
-    ) -> tuple[list[Tensor], tuple[NDArray, ...]]:
+    ) -> tuple[list[Tensor], tuple[NDArray, ...], Tensor]:
         """
         The inner loop for the learner.
 
         :param candidates: The mixing candidates to be used.
         :param y: The base class label.
         :param y2: The second most likely label.
-        :returns: The images generated, and the corresponding fitness.
+        :returns: The images generated, and the corresponding fitness and the softmax predictions.
         """
         # Get the initial population of style mixing conditions and weights
         sm_cond_arr, sm_weights_arr = self._learner.get_x_current()
@@ -236,7 +208,38 @@ class NeuralTester:
             }
         wandb.log(results)
 
-        return images, fitness
+        return images, fitness, predictions_softmax
+
+    def _generate_seeds(self, amount: int, cls: int) -> tuple[list[Tensor], list[Tensor], list[Tensor], int]:
+        """
+        Generate seeds for a specific class.
+
+        :param amount: The amount of seeds to be generated.
+        :param cls: The class to be generated.
+        :returns: The w vectors generated, the corresponding images, confidence values and the amount of trials needed.
+        """
+        ws: list[Tensor] = []
+        imgs: list[Tensor] = []
+        y_hats: list[Tensor] = []
+
+        logging.info(f"Generate seed(s) for class: {cls}.")
+        # For logging purposes to see how many samples we need to find valid seed.
+        trials = 0
+        while len(ws) < amount:
+            trials += 1
+            # We generate w latent vector.
+            w = self._mixer.get_w(self._get_time_seed(), cls)
+            # We generate and transform the image to RGB if it is in Grayscale.
+            img = self._assure_rgb(self._mixer.get_image(w))
+            y_hat = self._predictor(img.unsqueeze(0))
+
+            # We are only interested in candidate if the prediction matches the label
+            if y_hat.argmax() == cls:
+                ws.append(w)
+                imgs.append(img)
+                y_hats.append(y_hat)
+        logging.info(f"\tFound {amount} valid seed(s) after: {trials} iterations.")
+        return ws, imgs, y_hats, trials
 
     def _init_wandb(self, exp_start: datetime, class_idx: int) -> None:
         """
