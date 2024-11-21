@@ -7,6 +7,7 @@ from itertools import product
 import numpy as np
 import torch
 from numpy.typing import NDArray
+from scipy.spatial.distance import wminkowski
 from torch import Tensor, nn
 
 import wandb
@@ -67,6 +68,36 @@ class NeuralTester:
         self._predictor.eval()
         self._softmax = torch.nn.Softmax(dim=1)
 
+    def _generate_seeds(self, amount: int, cls: int) -> tuple[list[Tensor], list[Tensor], list[Tensor], int]:
+        """
+        Generate seeds for a specific class.
+
+        :param amount: The amount of seeds to be generated.
+        :param cls: The class to be generated.
+        :returns: The w vectors generated, the corresponding images, confidence values and the amount of trials needed.
+        """
+        ws: list[Tensor] = []
+        imgs: list[Tensor] = []
+        y_hats: list[Tensor] = []
+
+        logging.info(f"Generate seed(s) for class: {cls}.")
+        # For logging purposes to see how many samples we need to find valid seed.
+        trials = 0
+        while len(ws) < amount:
+            trials += 1
+            # We generate w latent vector.
+            w = self._mixer.get_w(self._get_time_seed(), cls)
+            # We generate and transform the image to RGB if it is in Grayscale.
+            img = self._assure_rgb(self._mixer.get_image(w))
+            y_hat = self._predictor(img.unsqueeze(0))
+
+            # We are only interested in candidate if the prediction matches the label
+            if y_hat.argmax() == cls:
+                ws.append(w)
+        logging.info(f"\tFound {amount} valid seed(s) after: {trials} iterations.")
+        return ws, imgs, y_hats,trials
+
+
     def test(self):
         """Testing the predictor for its decision boundary using a set of (test!) Inputs."""
         spc, nc = self._config.samples_per_class, self._config.classes
@@ -78,44 +109,27 @@ class NeuralTester:
         for class_idx, sample_id in product(range(nc), range(spc)):
             self._init_wandb(exp_start, class_idx)  # Initialize Wandb run for logging
 
-            w0_tensors: list[Tensor] = []
-            logging.info(f"Generate seed(s) for class: {class_idx}.")
-            # For logging purposes to see how many samples we need to find valid seed.
-            while_counter = 0
-            while len(w0_tensors) < self._num_w0:  # Generate base seeds.
-                while_counter += 1
-                # We generate w0 vector and the corresponding image X.
-                w = self._mixer.get_w0(self._get_time_seed(), class_idx)
-                img = self._mixer.get_image(w)
-                # We transform the image to RGB if it is in Grayscale and add batch dimension.
-                self._img_rgb = self._assure_rgb(img).unsqueeze(0)
-                y_hat = self._predictor(self._img_rgb)
-                """
-                Now we select primary and secondary predictions for further style mixing.
-                
-                Note this can be extended to any n predictions, but for this approach we limited it to 2.
-                """
-                first, second, *_ = torch.argsort(y_hat, descending=True)[0]
-                # We are only interested in checking the boundary if the prediction matches the label
-                if first.item() == class_idx:
-                    w0_tensors.append(w)
+            w0_tensors, w0_images, w0_ys, w0_trials = self._generate_seeds(self._num_w0, class_idx)
 
-            # Logging Operations
-            logging.info(f"\tFound {self._num_w0} valid seed(s) after: {while_counter} iterations.")
+            """
+            Now we select primary and secondary predictions for further style mixing.
+            Note this can be extended to any n predictions, but for this approach we limited it to 2.
+            Additionally this can be generalized to N w0 vectors, but now we only consider one.
+            """
+            _, second, *_ = torch.argsort(w0_ys[0], descending=True)[0]
+            self._img_rgb = w0_images[0]
+
+            wn_tensors, wn_images, wn_ys, wn_trials = self._generate_seeds(self._num_ws, second)
+
             wandb.log({"base_image": wandb.Image(self._img_rgb, caption="Base Image")})
-            wandb.summary["w0_trials"] = while_counter
+            wandb.summary["w0_trials"], wandb.summary["wn_trials"]  = w0_trials, wn_trials
 
             """
-            We generate w0 and w candidates for seed generation.
-            
-            Not that the w0s and ws' do not have to share a label, but for this implementation we do not control the labels seperately.
+            Note that the w0s and ws' do not have to share a label, but for this implementation we do not control the labels separately.
             """
-            # To save compute we parse tha cached tensors of w0 vectors as we generated them already for getting the initial prediction.
-            w0c = [
-                MixCandidate(label=first.item(), is_w0=True, w_tensor=tensor)
-                for tensor in w0_tensors
-            ]
-            wsc = [MixCandidate(label=second.item()) for _ in range(self._num_ws)]
+            # To save compute we parse tha cached tensors of w vectors as we generated them already for getting the initial prediction.
+            w0c = [MixCandidate(label=class_idx, is_w0=True, w_tensor=tensor) for tensor in w0_tensors]
+            wsc = [MixCandidate(label=second.item(), w_tensor=tensor) for tensor in wn_tensors]
             candidates = CandidateList(*w0c, *wsc)
 
             # Now we run a search-based optimization strategy to find a good boundary candidate.
@@ -170,17 +184,17 @@ class NeuralTester:
         :returns: The images generated, and the corresponding fitness.
         """
         # Get the initial population of style mixing conditions and weights
-        smx_cond_arr, smx_weights_arr = self._learner.get_x_current()
+        sm_cond_arr, sm_weights_arr = self._learner.get_x_current()
         assert (
-            0 <= smx_cond_arr.max() < self._num_ws
-        ), f"Error: StyleMixing Conditions reference indices of {smx_cond_arr.max()}, but we only have {self._num_ws} elements."
+            0 <= sm_cond_arr.max() < self._num_ws
+        ), f"Error: StyleMixing Conditions reference indices of {sm_cond_arr.max()}, but we only have {self._num_ws} elements."
 
         images = []
-        for smx_cond, smx_weights in zip(smx_cond_arr, smx_weights_arr):
+        for sm_cond, sm_weights in zip(sm_cond_arr, sm_weights_arr):
             mixed_image = self._mixer.mix(
                 candidates=candidates,
-                smx_cond=smx_cond,
-                smx_weights=smx_weights,
+                sm_cond=sm_cond,
+                sm_weights=sm_weights,
                 random_seed=self._get_time_seed(),
             )
             images.append(mixed_image)
