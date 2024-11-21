@@ -77,8 +77,10 @@ class StyleMixer:
         wn_tensors = torch.vstack(candidates.wn_candidates.w_tensors) - w_avg
 
         """Get w0 vector."""
-        w0_weights = candidates.w0_candidates.weights,
-        assert all((sum(w) == 1 for w in w0_weights)) , f"Error: w0 weight do not sum up to one: {w0_weights}."
+        w0_weights = (candidates.w0_candidates.weights,)
+        assert all(
+            (sum(w) == 1 for w in w0_weights)
+        ), f"Error: w0 weight do not sum up to one: {w0_weights}."
         w0_weight_tensor = torch.as_tensor(w0_weights, device=self._device)[:, None, None]
         w0_tensors = torch.stack(candidates.w0_candidates.w_tensors) - w_avg
         w0 = (w0_tensors * w0_weight_tensor).sum(dim=0)  # Initialize base using w0 seeds.

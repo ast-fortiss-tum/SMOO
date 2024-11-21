@@ -91,13 +91,15 @@ class NeuralTester:
             wn_tensors, wn_images, wn_ys, wn_trials = self._generate_seeds(self._num_ws, second)
 
             wandb.log({"base_image": wandb.Image(self._img_rgb, caption="Base Image")})
-            wandb.summary["w0_trials"], wandb.summary["wn_trials"]  = w0_trials, wn_trials
+            wandb.summary["w0_trials"], wandb.summary["wn_trials"] = w0_trials, wn_trials
 
             """
             Note that the w0s and ws' do not have to share a label, but for this implementation we do not control the labels separately.
             """
             # To save compute we parse tha cached tensors of w vectors as we generated them already for getting the initial prediction.
-            w0c = [MixCandidate(label=class_idx, is_w0=True, w_tensor=tensor) for tensor in w0_tensors]
+            w0c = [
+                MixCandidate(label=class_idx, is_w0=True, w_tensor=tensor) for tensor in w0_tensors
+            ]
             wsc = [MixCandidate(label=second.item(), w_tensor=tensor) for tensor in wn_tensors]
             candidates = CandidateList(*w0c, *wsc)
 
@@ -124,8 +126,7 @@ class NeuralTester:
                         columns=[metric.name for metric in self._config.metrics]
                         + [f"Genome_{i}" for i in range(*self._config.mix_dim_range)]
                         + ["Image"]
-                        + [f"Conf_{i}" for i in range(self._config.classes)]
-                        ,
+                        + [f"Conf_{i}" for i in range(self._config.classes)],
                         data=[
                             [
                                 *c.fitness,
@@ -210,7 +211,9 @@ class NeuralTester:
 
         return images, fitness, predictions_softmax
 
-    def _generate_seeds(self, amount: int, cls: int) -> tuple[list[Tensor], list[Tensor], list[Tensor], int]:
+    def _generate_seeds(
+        self, amount: int, cls: int
+    ) -> tuple[list[Tensor], list[Tensor], list[Tensor], int]:
         """
         Generate seeds for a specific class.
 
