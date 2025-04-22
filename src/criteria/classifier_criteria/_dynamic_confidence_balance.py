@@ -3,10 +3,10 @@ from typing import Any, Optional
 import numpy as np
 from torch import Tensor
 
-from .._criterion import Criterion
+from ._classifier_criterion import ClassifierCriterion
 
 
-class DynamicConfidenceBalance(Criterion):
+class DynamicConfidenceBalance(ClassifierCriterion):
     """Implements a dynamic confidence balance measure."""
 
     _name: str = "DynCB"

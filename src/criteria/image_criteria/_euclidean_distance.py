@@ -3,11 +3,10 @@ from typing import Any
 import numpy as np
 from torch import Tensor
 
-from .._criterion import Criterion
-from ._prepare_tensor import prepare_tensor
+from ._image_criterion import ImageCriterion
 
 
-class EuclideanDistance(Criterion):
+class EuclideanDistance(ImageCriterion):
     """Implements a Euclidean Distance measure."""
 
     _name: str = "EuclideanDistance"
@@ -30,10 +29,7 @@ class EuclideanDistance(Criterion):
         :param _: Additional unused kwargs.
         :returns: The distance.
         """
-        assert len(images) == 2, f"ERROR, {self._name} requires 2 images, found {len(images)}"
-        images = [prepare_tensor(i) for i in images]
-        i1, i2 = images[0], images[1]
-
+        i1, i2 = self.prepare_images(images)
         return (
             np.linalg.norm(i1 - i2)
             if not self._normalize

@@ -1,7 +1,7 @@
 """A collection of metric selections for specific objectives."""
 
-from ..criteria.classifier_objectives import UncertaintyThreshold
-from ..criteria.image_comparison import CFrobeniusDistance
+from ..criteria.classifier_criteria import UncertaintyThreshold
+from ..criteria.image_criteria import CFrobeniusDistance
 from ..criteria.objective_functions import (
     DynamicConfidenceBalance,
     IsMisclassified,
@@ -12,13 +12,13 @@ from ..criteria.objective_functions import (
 ### ADVERSARIAL TESTING:
 When doing adversarial testing we aim to find inputs that are close to the original, but perturb the classifiers predictions.
 
-In the untargeted case we do not care what class the perturbed input fall into.
-In the targeted case we want to find a perturbed input with a specific (secondary) class.
+Dynamic refers to the ability for a target to change during optimization.
+Targeted refers to the ability to use SUT feedback in order to find specific co-classes used for optimization.
 
 Note that generally this can be a discrete problem where we check, if misclassified. 
 But for optimization continuous problems produce better results, therefore we use confidence imbalance.
 """
-UNTARGETED_ADVERSARIAL_TESTING = [
+DYNAMIC_TARGETED_ADVERSARIAL_TESTING = [
     CFrobeniusDistance(),
     DynamicConfidenceBalance(inverse=True, target_primary=False),
 ]
@@ -31,10 +31,9 @@ TARGETED_ADVERSARIAL_TESTING = [
 ### Boundary TESTING:
 Boundary testing essentially tries to find inputs that confuse the classifier, i.e. where the confidence of 2 or n classes are in a balance.
 
-This again can be untargeted, where we do not care about the final class or targeted where we want to find a specific boundary.
 Note that here we dont care about the distance of images, since the boundary can either be of an adversarial subset in the classifiers desicion-manifold, or it can be a different class set entirely.
 """
-UNTARGETED_BOUNDARY_TESTING = [DynamicConfidenceBalance()]
+DYNAMIC_TARGETED_BOUNDARY_TESTING = [DynamicConfidenceBalance()]
 TARGETED_BOUNDARY_TESTING = [NaiveConfidenceBalance()]
 ADVERSARIAL_BOUNDARY_TESTING = [NaiveConfidenceBalance(), CFrobeniusDistance()]
 

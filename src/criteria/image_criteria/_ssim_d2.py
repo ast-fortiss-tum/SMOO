@@ -5,11 +5,10 @@ from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter
 from torch import Tensor
 
-from .._criterion import Criterion
-from ._prepare_tensor import prepare_tensor
+from ._image_criterion import ImageCriterion
 
 
-class SSIMD2(Criterion):
+class SSIMD2(ImageCriterion):
     """
     Implements SSIM metric.
 
@@ -52,9 +51,7 @@ class SSIMD2(Criterion):
         :param _: Additional unused kwargs.
         :returns: SSIM score.
         """
-        assert len(images) == 2, f"ERROR, {self._name} requires 2 images, found {len(images)}"
-        images = [prepare_tensor(i) for i in images]
-        i1, i2 = images[0], images[1]
+        i1, i2 = self.prepare_images(images)
 
         assert (
             i1.shape == i2.shape

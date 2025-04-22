@@ -3,11 +3,10 @@ from typing import Any
 import numpy as np
 from torch import Tensor
 
-from .._criterion import Criterion
-from ._prepare_tensor import prepare_tensor
+from ._image_criterion import ImageCriterion
 
 
-class CosDissimilarity(Criterion):
+class CosDissimilarity(ImageCriterion):
     """Implements cos dissimilarity measure."""
 
     _name: str = "CosDissim"
@@ -22,9 +21,7 @@ class CosDissimilarity(Criterion):
         :param _: Additional unused kwargs.
         :returns: The score.
         """
-        assert len(images) == 2, f"ERROR, {self._name} requires 2 images, found {len(images)}"
-        images = [prepare_tensor(i) for i in images]
-        i1, i2 = images[0], images[1]
+        i1, i2 = self.prepare_images(images)
 
         value = np.dot(i1.flatten(), i2.flatten()) / (np.linalg.norm(i1) * np.linalg.norm(i2))
         return 1 - value

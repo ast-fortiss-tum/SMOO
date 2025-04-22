@@ -2,10 +2,10 @@ from typing import Any
 
 from torch import Tensor
 
-from .._criterion import Criterion
+from ._classifier_criterion import ClassifierCriterion
 
 
-class UncertaintyThreshold(Criterion):
+class UncertaintyThreshold(ClassifierCriterion):
     """Implements uncertainty threshold as a criterion."""
 
     _name: str = "Uncertainty Threshold"

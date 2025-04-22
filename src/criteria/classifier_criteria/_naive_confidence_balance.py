@@ -2,10 +2,10 @@ from typing import Any, Optional
 
 from torch import Tensor
 
-from .._criterion import Criterion
+from ._classifier_criterion import ClassifierCriterion
 
 
-class NaiveConfidenceBalance(Criterion):
+class NaiveConfidenceBalance(ClassifierCriterion):
     """Implements a naive confidence balance measure."""
 
     _name: str = "NaiveCB"

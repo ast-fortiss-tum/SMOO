@@ -2,10 +2,10 @@ from typing import Any
 
 from torch import Tensor
 
-from .._criterion import Criterion
+from ._classifier_criterion import ClassifierCriterion
 
 
-class IsMisclassified(Criterion):
+class IsMisclassified(ClassifierCriterion):
     """Implements a criterion to check if a prediction is incorrect."""
 
     _name: str = "IsMisclassified"
