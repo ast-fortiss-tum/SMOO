@@ -34,7 +34,7 @@ class StyleGANManipulator(Manipulator):
         mix_dims: tuple[int, int],
         interpolate: bool = True,
         noise_mode: str = "random",
-    ):
+    ) -> None:
         """
         Initialize the StyleMixer object.
 

@@ -1,6 +1,8 @@
 .idea
 .venv
 *.csv
+*.pt
+*.ckpt
 *.pkl
 **/_*.ipynb
 *.json*
