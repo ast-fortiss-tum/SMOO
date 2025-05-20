@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from collections import UserList
-from dataclasses import dataclass
 from typing import Optional
 
 import torch
 
+from .._candidate import Candidate, CandidateList
 
-@dataclass
-class MixCandidate:
+
+class MixCandidate(Candidate):
     """A simple container for candidate elements used in style mixing/ interpolation."""
 
     label: int  # The class label of the candidate.
@@ -18,7 +17,7 @@ class MixCandidate:
     w_tensor: Optional[torch.Tensor] = None  # The latent vector if already generated.
 
 
-class CandidateList(UserList):
+class MixCandidateList(CandidateList):
     """
     A custom list like object to handle MixCandidates easily.
 
@@ -28,11 +27,16 @@ class CandidateList(UserList):
     _weights: Optional[list[float]]
     _labels: Optional[list[int]]
     _w_indices: Optional[list[int]]
-    _w0_candidates: Optional[CandidateList]
-    _wn_candidates: Optional[CandidateList]
+    _w0_candidates: Optional[MixCandidateList]
+    _wn_candidates: Optional[MixCandidateList]
 
-    def __init__(self, *initial_candidates: MixCandidate):
-        super().__init__(initial_candidates)
+    def __init__(self, *initial_candidates: MixCandidate) -> None:
+        """
+        Initialize the MixCandidateList.
+
+        :param initial_candidates: the initial candidates for the list.
+        """
+        super().__init__(*initial_candidates)
         """If there are elements that have no index in the original collection we assign them to ensure persistent order."""
         max_i = -1
         for i, candidate in enumerate(self.data):
@@ -69,26 +73,13 @@ class CandidateList(UserList):
         return self._w_tensors
 
     @property
-    def w0_candidates(self) -> CandidateList:
+    def w0_candidates(self) -> MixCandidateList:
         if not self._w0_candidates:
-            self._w0_candidates = CandidateList(*[elem for elem in self.data if elem.is_w0])
+            self._w0_candidates = MixCandidateList(*[elem for elem in self.data if elem.is_w0])
         return self._w0_candidates
 
     @property
-    def wn_candidates(self) -> CandidateList:
+    def wn_candidates(self) -> MixCandidateList:
         if not self._wn_candidates:
-            self._wn_candidates = CandidateList(*[elem for elem in self.data if not elem.is_w0])
+            self._wn_candidates = MixCandidateList(*[elem for elem in self.data if not elem.is_w0])
         return self._wn_candidates
-
-    """Make the list immutable."""
-
-    def insert(self, index=None, value=None):
-        raise TypeError()
-
-    __setitem__ = insert
-    __delitem__ = insert
-    append = insert
-    extend = insert
-    pop = insert
-    reverse = insert
-    sort = insert

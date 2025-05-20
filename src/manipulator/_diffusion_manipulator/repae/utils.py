@@ -6,7 +6,7 @@ import timm
 import torch
 from PIL import Image
 
-from models import mocov3_vit
+from .models import mocov3_vit
 
 
 def fix_mocov3_state_dict(state_dict):

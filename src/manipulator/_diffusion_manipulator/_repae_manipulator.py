@@ -2,11 +2,11 @@ import gc
 from typing import Callable
 
 import torch
-from numpy.typing import NDArray
-from repae.models.autoencoder import vae_models
-from repae.models.sit import SiT_models
-from repae.utils import load_encoders
 from torch import Tensor, nn
+
+from .repae.models.autoencoder import vae_models
+from .repae.models.sit import SiT_models
+from .repae.utils import load_encoders
 
 
 class REPAEManipulator:

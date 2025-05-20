@@ -14,7 +14,7 @@ from wandb import UsageError
 
 from ._experiment_config import ExperimentConfig
 from .criteria import Criterion
-from .manipulator import CandidateList, Manipulator, MixCandidate
+from .manipulator import Manipulator, MixCandidate, MixCandidateList
 from .optimizer import Learner
 from .persistence import DefaultDF
 
@@ -127,7 +127,7 @@ class NeuralTester:
                 MixCandidate(label=class_idx, is_w0=True, w_tensor=tensor) for tensor in w0_tensors
             ]
             wsc = [MixCandidate(label=second.item(), w_tensor=tensor) for tensor in wn_tensors]
-            candidates = CandidateList(*w0c, *wsc)
+            candidates = MixCandidateList(*w0c, *wsc)
 
             # Now we run a search-based optimization strategy to find a good boundary candidate.
             logging.info(f"Running Search-Algorithm for {self._config.generations} generations.")
@@ -184,7 +184,7 @@ class NeuralTester:
 
     def _inner_loop(
         self,
-        candidates: CandidateList,
+        candidates: MixCandidateList,
         c1: int,
         c2: int,
     ) -> tuple[list[Tensor], tuple[NDArray, ...], Tensor]:

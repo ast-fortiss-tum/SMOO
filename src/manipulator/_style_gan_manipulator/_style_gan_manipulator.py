@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from src.manipulator._style_gan_manipulator._mix_candidate import CandidateList
+from src.manipulator._style_gan_manipulator._mix_candidate import MixCandidateList
 
 from .._manipulator import Manipulator
 from . import dnnlib
@@ -67,7 +67,7 @@ class StyleGANManipulator(Manipulator):
 
     def manipulate(
         self,
-        candidates: CandidateList,
+        candidates: MixCandidateList,
         cond: list[int],
         weights: list[float],
         random_seed: int = 0,
