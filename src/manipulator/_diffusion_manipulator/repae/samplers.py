@@ -1,5 +1,5 @@
-import torch
 import numpy as np
+import torch
 
 
 def expand_t_like_x(t, x_cur):
@@ -28,7 +28,7 @@ def get_score_from_velocity(vt, xt, t, path_type="linear"):
         alpha_t = torch.cos(t * np.pi / 2)
         sigma_t = torch.sin(t * np.pi / 2)
         d_alpha_t = -np.pi / 2 * torch.sin(t * np.pi / 2)
-        d_sigma_t =  np.pi / 2 * torch.cos(t * np.pi / 2)
+        d_sigma_t = np.pi / 2 * torch.cos(t * np.pi / 2)
     else:
         raise NotImplementedError
 
@@ -45,21 +45,21 @@ def compute_diffusion(t_cur):
 
 
 def euler_sampler(
-        model,
-        latents,
-        y,
-        num_steps=20,
-        heun=False,
-        cfg_scale=1.0,
-        guidance_low=0.0,
-        guidance_high=1.0,
-        path_type="linear", # not used, just for compatability
-    ):
+    model,
+    latents,
+    y,
+    num_steps=20,
+    heun=False,
+    cfg_scale=1.0,
+    guidance_low=0.0,
+    guidance_high=1.0,
+    path_type="linear",  # not used, just for compatability
+):
     # setup conditioning
     if cfg_scale > 1.0:
         y_null = torch.tensor([1000] * y.size(0), device=y.device)
-    _dtype = latents.dtype    
-    t_steps = torch.linspace(1, 0, num_steps+1, dtype=torch.float64)
+    _dtype = latents.dtype
+    t_steps = torch.linspace(1, 0, num_steps + 1, dtype=torch.float64)
     x_next = latents.to(torch.float64)
     device = x_next.device
 
@@ -71,13 +71,15 @@ def euler_sampler(
                 y_cur = torch.cat([y, y_null], dim=0)
             else:
                 model_input = x_cur
-                y_cur = y            
+                y_cur = y
             kwargs = dict(y=y_cur)
-            time_input = torch.ones(model_input.size(0)).to(device=device, dtype=torch.float64) * t_cur
+            time_input = (
+                torch.ones(model_input.size(0)).to(device=device, dtype=torch.float64) * t_cur
+            )
             d_cur = model.inference(
                 model_input.to(dtype=_dtype), time_input.to(dtype=_dtype), **kwargs
             ).to(torch.float64)
-            if cfg_scale > 1. and t_cur <= guidance_high and t_cur >= guidance_low:
+            if cfg_scale > 1.0 and t_cur <= guidance_high and t_cur >= guidance_low:
                 d_cur_cond, d_cur_uncond = d_cur.chunk(2)
                 d_cur = d_cur_uncond + cfg_scale * (d_cur_cond - d_cur_uncond)
             x_next = x_cur + (t_next - t_cur) * d_cur
@@ -89,12 +91,15 @@ def euler_sampler(
                     model_input = x_next
                     y_cur = y
                 kwargs = dict(y=y_cur)
-                time_input = torch.ones(model_input.size(0)).to(
-                    device=model_input.device, dtype=torch.float64
-                    ) * t_next
+                time_input = (
+                    torch.ones(model_input.size(0)).to(
+                        device=model_input.device, dtype=torch.float64
+                    )
+                    * t_next
+                )
                 d_prime = model.inference(
                     model_input.to(dtype=_dtype), time_input.to(dtype=_dtype), **kwargs
-                    ).to(torch.float64)
+                ).to(torch.float64)
                 if cfg_scale > 1.0 and t_cur <= guidance_high and t_cur >= guidance_low:
                     d_prime_cond, d_prime_uncond = d_prime.chunk(2)
                     d_prime = d_prime_uncond + cfg_scale * (d_prime_cond - d_prime_uncond)
@@ -104,24 +109,24 @@ def euler_sampler(
 
 
 def euler_maruyama_sampler(
-        model,
-        latents,
-        y,
-        num_steps=20,
-        heun=False,  # not used, just for compatability
-        cfg_scale=1.0,
-        guidance_low=0.0,
-        guidance_high=1.0,
-        path_type="linear",
-    ):
+    model,
+    latents,
+    y,
+    num_steps=20,
+    heun=False,  # not used, just for compatability
+    cfg_scale=1.0,
+    guidance_low=0.0,
+    guidance_high=1.0,
+    path_type="linear",
+):
     # setup conditioning
     if cfg_scale > 1.0:
         y_null = torch.tensor([1000] * y.size(0), device=y.device)
-            
+
     _dtype = latents.dtype
-    
-    t_steps = torch.linspace(1., 0.04, num_steps, dtype=torch.float64)
-    t_steps = torch.cat([t_steps, torch.tensor([0.], dtype=torch.float64)])
+
+    t_steps = torch.linspace(1.0, 0.04, num_steps, dtype=torch.float64)
+    t_steps = torch.cat([t_steps, torch.tensor([0.0], dtype=torch.float64)])
     x_next = latents.to(torch.float64)
     device = x_next.device
 
@@ -134,10 +139,12 @@ def euler_maruyama_sampler(
                 y_cur = torch.cat([y, y_null], dim=0)
             else:
                 model_input = x_cur
-                y_cur = y            
+                y_cur = y
             kwargs = dict(y=y_cur)
-            time_input = torch.ones(model_input.size(0)).to(device=device, dtype=torch.float64) * t_cur
-            diffusion = compute_diffusion(t_cur)            
+            time_input = (
+                torch.ones(model_input.size(0)).to(device=device, dtype=torch.float64) * t_cur
+            )
+            diffusion = compute_diffusion(t_cur)
             eps_i = torch.randn_like(x_cur).to(device)
             deps = eps_i * torch.sqrt(torch.abs(dt))
 
@@ -147,11 +154,11 @@ def euler_maruyama_sampler(
             ).to(torch.float64)
             s_cur = get_score_from_velocity(v_cur, model_input, time_input, path_type=path_type)
             d_cur = v_cur - 0.5 * diffusion * s_cur
-            if cfg_scale > 1. and t_cur <= guidance_high and t_cur >= guidance_low:
+            if cfg_scale > 1.0 and t_cur <= guidance_high and t_cur >= guidance_low:
                 d_cur_cond, d_cur_uncond = d_cur.chunk(2)
                 d_cur = d_cur_uncond + cfg_scale * (d_cur_cond - d_cur_uncond)
 
-            x_next =  x_cur + d_cur * dt + torch.sqrt(diffusion) * deps
+            x_next = x_cur + d_cur * dt + torch.sqrt(diffusion) * deps
 
     # last step
     t_cur, t_next = t_steps[-2], t_steps[-1]
@@ -162,20 +169,18 @@ def euler_maruyama_sampler(
         y_cur = torch.cat([y, y_null], dim=0)
     else:
         model_input = x_cur
-        y_cur = y            
+        y_cur = y
     kwargs = dict(y=y_cur)
-    time_input = torch.ones(model_input.size(0)).to(
-        device=device, dtype=torch.float64
-        ) * t_cur
-    
+    time_input = torch.ones(model_input.size(0)).to(device=device, dtype=torch.float64) * t_cur
+
     # compute drift
-    v_cur = model.inference(
-        model_input.to(dtype=_dtype), time_input.to(dtype=_dtype), **kwargs
-    ).to(torch.float64)
+    v_cur = model.inference(model_input.to(dtype=_dtype), time_input.to(dtype=_dtype), **kwargs).to(
+        torch.float64
+    )
     s_cur = get_score_from_velocity(v_cur, model_input, time_input, path_type=path_type)
     diffusion = compute_diffusion(t_cur)
     d_cur = v_cur - 0.5 * diffusion * s_cur
-    if cfg_scale > 1. and t_cur <= guidance_high and t_cur >= guidance_low:
+    if cfg_scale > 1.0 and t_cur <= guidance_high and t_cur >= guidance_low:
         d_cur_cond, d_cur_uncond = d_cur.chunk(2)
         d_cur = d_cur_uncond + cfg_scale * (d_cur_cond - d_cur_uncond)
 

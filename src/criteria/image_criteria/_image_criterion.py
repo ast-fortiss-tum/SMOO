@@ -36,8 +36,7 @@ class ImageCriterion(Criterion):
         ndarray = ndarray.transpose(1, 2, 0)
         return ndarray
 
-    @staticmethod
-    def prepare_images(images: list[Tensor]) -> tuple[NDArray, NDArray]:
+    def prepare_images(self, images: list[Tensor]) -> tuple[NDArray, NDArray]:
         """
         Prepare image pairs for evaluation and assert that there are two images.
 
