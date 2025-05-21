@@ -1,9 +1,10 @@
 import gc
-from typing import Callable
+from typing import Callable, Union
 
 import torch
 from torch import Tensor, nn
 
+from ._diffusion_candidate import DiffusionCandidate, DiffusionCandidateList
 from .repae.models.autoencoder import vae_models
 from .repae.models.sit import SiT_models
 from .repae.utils import load_encoders
@@ -48,8 +49,7 @@ class REPAEManipulator:
         :param model: The type of model to use.
         :param encoder: The type of encoder to use.
         :param num_classes: Number of classes in the dataset.
-        :param batch_size: Batch size to use for generation of samples..
-        raises: NotImplementedError If elements are not supported.
+        :param batch_size: Batch size to use for generation of samples.
         """
         self._prepare_cuda()
         self._batch_size = batch_size
@@ -110,28 +110,44 @@ class REPAEManipulator:
 
     def manipulate(
         self,
-        candidates: Tensor,  # TODO: Make those candidate lists
-        candidate_ys: Tensor,
-        weights: Tensor,
-        weights_y: Tensor,
-        t_cur: Tensor,
-        step: float,
-    ) -> Tensor:
-        assert (
-            candidates.shape[:1] == weights.shape
-        ), f"ERROR, candidates have shape {candidates.shape}, weights have shape {weights.shape}"
-        assert (
-            candidate_ys.shape[:1] == weights_y.shape
-        ), f"ERROR, candidates have shape {candidate_ys.shape}, weights have shape {weights_y.shape}"
+        candidates: DiffusionCandidateList,
+        weights_x: list[Tensor],
+        weights_y: list[Tensor],
+        return_manipulation_history: bool = False,
+    ) -> Union[Tensor, tuple[Tensor, DiffusionCandidate]]:
+        """
+        Manipulate the diffusion processes of candidates.
 
-        x_manip = torch.sum(
-            candidates * weights[:, None, None, None], dim=0, keepdim=True
-        )  # N x X -> 1 x X
-        y_manip = torch.sum(
-            candidate_ys * weights_y[:, None], dim=0, keepdim=True
-        )  # N x Y -> 1 x Y
+        :param candidates: Candidates to manipulate.
+        :param weights_x: Weights to manipulate diffusion process.
+        :param weights_y: Weights to manipulate class embeddings.
+        :param return_manipulation_history: Whether to return a candidate representing the manipulation history.
+        :returns: The resulting diffusion result.
+        """
+        n_steps = len(candidates[0].xt) - 1
+        t_steps = torch.linspace(1, 0, n_steps + 1, device=self._device)  # Define step range.
 
-        x_cur = self._sample(t_cur, x_manip, y_manip, step)
+        """Now we step through the diffusion process and manipulate accordingly."""
+        manip_xt, manip_y = candidates[0].xt, candidates[0].class_embedding
+        x_cur = manip_xt[0]
+        """The manipulation process."""
+        for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
+            x_manip = torch.sum(
+                candidates.xts[i] * weights_x[i][:, None, None, None], dim=0, keepdim=True
+            )  # N x X -> 1 x X
+            x_manip = (manip_xt[i] + x_manip) / 2
+            y_manip = torch.sum(
+                candidates.class_embeddings[i] * weights_y[i][:, None], dim=0, keepdim=True
+            )  # N x Y -> 1 x Y
+            x_cur = self._sample(t_cur, x_manip, y_manip, t_next - t_cur)
+
+            manip_y[i] = y_manip
+            manip_xt[i + 1] = x_cur
+
+        """Return a candidate with the manipulation history if wanted."""
+        if return_manipulation_history:
+            manip_candidate = DiffusionCandidate(class_embedding=manip_y, xt=manip_xt)
+            return x_cur, manip_candidate
         return x_cur
 
     def _sample(
@@ -146,6 +162,10 @@ class REPAEManipulator:
         """
         Sampling new outputs based on euler_sampler in REPA-E repo.
 
+        :param t: The current time step.
+        :param x: The current state of the diffusion process.
+        :param y: The current class embedding of the diffusion process.
+        :param step: The step size.
         :param cfg_scale: CFG scale for conditions in the sampling.
         :param guidance_bounds: Guidance bounds for conditions in the sampling.
         :returns: The sampled outputs for the current timestep.

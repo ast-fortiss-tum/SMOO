@@ -1,6 +1,10 @@
 """A package for latent space manipulators and auxiliary elements."""
 
-from ._diffusion_manipulator import REPAEManipulator
+from ._diffusion_manipulator import (
+    DiffusionCandidate,
+    DiffusionCandidateList,
+    REPAEManipulator,
+)
 from ._manipulator import Manipulator
 from ._style_gan_manipulator import MixCandidate, MixCandidateList, StyleGANManipulator
 
@@ -10,4 +14,6 @@ __all__ = [
     "StyleGANManipulator",
     "Manipulator",
     "REPAEManipulator",
+    "DiffusionCandidate",
+    "DiffusionCandidateList",
 ]

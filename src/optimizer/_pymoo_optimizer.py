@@ -9,11 +9,11 @@ from pymoo.core.problem import Problem
 from pymoo.core.termination import NoTermination
 from pymoo.problems.static import StaticProblem
 
-from ._learner import Learner
+from ._optimizer import Optimizer
 from .auxiliary_components import OptimizerCandidate
 
 
-class PymooLearner(Learner):
+class PymooOptimizer(Optimizer):
     """A Learner class for easy Pymoo integration"""
 
     _pymoo_algo: Algorithm

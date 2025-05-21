@@ -3,11 +3,11 @@ from typing import Callable, Union
 import numpy as np
 from numpy.typing import NDArray
 
-from ._learner import Learner
+from ._optimizer import Optimizer
 from .auxiliary_components import OptimizerCandidate
 
 
-class GeneticLearner(Learner):
+class GeneticOptimizer(Optimizer):
     """A learner based on genetic algorithm."""
 
     _mutation_rate: float

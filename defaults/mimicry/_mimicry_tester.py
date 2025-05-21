@@ -3,38 +3,32 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from itertools import product
-from typing import Any, Optional
+from typing import Optional
 
 import numpy as np
 import torch
 import wandb
 from numpy.typing import NDArray
-from torch import Tensor, nn
+from torch import Tensor
 from wandb import UsageError
 
+from src import SMOO
+from src.manipulator import MixCandidate, MixCandidateList, StyleGANManipulator
+from src.objectives import Criterion
+from src.optimizer import Optimizer
+from src.sut import ClassifierSUT
+
+from ._default_df import DefaultDF
 from ._experiment_config import ExperimentConfig
-from .criteria import Criterion
-from .manipulator import Manipulator, MixCandidate, MixCandidateList
-from .optimizer import Learner
-from .persistence import DefaultDF
 
 
-class NeuralTester:
-    """A tester class for DNN using latent space manipulation in generative models."""
-
-    """Used Components."""
-    _sut: nn.Module
-    _manipulator: Manipulator
-    _optimizer: Learner
-    _objectives: list[Criterion]
-
-    _softmax: nn.Module
+class MimicryTester(SMOO):
+    """A tester class for DNN using latent space manipulation in generative models (mimicry)."""
 
     """Additional Parameters."""
-    _config: ExperimentConfig
     _num_w0: int
     _num_ws: int
-    _restrict_classes: Optional[list[int]]
+    _config: ExperimentConfig
 
     """Temporary Variables."""
     _img_rgb: Tensor
@@ -42,9 +36,9 @@ class NeuralTester:
     def __init__(
         self,
         *,
-        sut: nn.Module,
-        manipulator: Manipulator,
-        optimizer: Learner,
+        sut: ClassifierSUT,
+        manipulator: StyleGANManipulator,
+        optimizer: Optimizer,
         objectives: list[Criterion],
         config: ExperimentConfig,
         frontier_pairs: bool,
@@ -67,21 +61,20 @@ class NeuralTester:
         :param silent_wandb: Whether to silence wandb.
         :param restrict_classes: What classes to restrict to.
         """
-
-        self._sut = sut
-        self._manipulator = manipulator
-        self._optimizer = optimizer
-        self._objectives = objectives
+        super().__init__(
+            sut=sut,
+            manipulator=manipulator,
+            optimizer=optimizer,
+            objectives=objectives,
+            silent_wandb=silent_wandb,
+            restrict_classes=restrict_classes,
+        )
 
         self._num_w0 = num_w0
         self._num_ws = num_ws
-
         self._config = config
-        self._softmax = torch.nn.Softmax(dim=1)  # TODO: should be refractored probably
 
         self._df = DefaultDF(pairs=frontier_pairs, additional_fields=["genome"])
-        self._silent = silent_wandb
-        self._restrict_classes = restrict_classes
 
     def test(self, validity_domain: bool = False) -> None:
         """
@@ -215,12 +208,11 @@ class NeuralTester:
         images = [self._assure_rgb(img) for img in images]
 
         """We predict the label from the mixed images."""
-        predictions: Tensor = self._predict(torch.stack(images))
-        predictions_softmax = self._softmax(predictions)
+        predictions: Tensor = self._process(torch.stack(images))
 
         # TODO: maybe have candidates be the input for criterion evaluation.
         fitness = []
-        for j, (Xp, yp) in enumerate(zip(images, predictions_softmax)):
+        for j, (Xp, yp) in enumerate(zip(images, predictions)):
             sol_arch = [i for i in images if not torch.equal(i, Xp)]
             gen_arch = [e for k, e in enumerate(sm_weights_arr) if k != j]
             im, lt, gt = [self._img_rgb, Xp], [c1, c2], sm_weights_arr[j]
@@ -252,34 +244,7 @@ class NeuralTester:
             }
         self._maybe_log(results)
 
-        return images, fitness, predictions_softmax
-
-    @staticmethod
-    def _maybe_log(results: dict) -> None:
-        """
-        Logs to Wandb if initialized.
-
-        :param results: The results to log.
-        """
-        try:
-            wandb.log(results)
-        except wandb.errors.Error as e:
-            logging.error(e)
-            pass
-
-    @staticmethod
-    def _maybe_summary(field: str, summary: Any) -> None:
-        """
-        Add elements to wandb Summary if initialized.
-
-        :param field: The field to add an element to.
-        :param summary: The element to add.
-        """
-        try:
-            wandb.summary[field] = summary
-        except wandb.errors.Error as e:
-            logging.error(e)
-            pass
+        return images, fitness, predictions
 
     def _generate_seeds(
         self, amount: int, cls: int
@@ -305,7 +270,7 @@ class NeuralTester:
             # We generate and transform the image to RGB if it is in Grayscale.
             img = self._manipulator.get_image(w)
             img = self._assure_rgb(img)
-            y_hat = self._predict(img.unsqueeze(0))
+            y_hat = self._process(img.unsqueeze(0))
 
             # We are only interested in candidate if the prediction matches the label
             if y_hat.argmax() == cls:
@@ -327,7 +292,7 @@ class NeuralTester:
         w: Tensor = self._manipulator.get_w(self._get_time_seed(), 0)
         ws = [torch.randn(w.size(), device=w.device) for _ in range(amount)]
         imgs = [self._assure_rgb(self._manipulator.get_image(w)) for w in ws]
-        y_hats = [self._predict(img.unsqueeze(0)) for img in imgs]
+        y_hats = [self._process(img.unsqueeze(0)) for img in imgs]
 
         logging.info(f"\tFound {amount} valid seed(s).")
         return ws, imgs, y_hats, 0
@@ -357,47 +322,3 @@ class NeuralTester:
         except UsageError as e:
             logging.error(f"Raised error {e}, \n continuing...")
             pass
-
-    @staticmethod
-    def _get_time_seed() -> int:
-        """
-        A simple function ot make a seed from the current timestamp.
-
-        :returns: A seed based on the timestamp.
-        """
-        now = datetime.now()
-        return int(round(now.timestamp()))
-
-    @staticmethod
-    def _assure_rgb(image: Tensor) -> Tensor:
-        """
-        Assure that image is or can be converted to RGB.
-
-        :param image: The image to be converted.
-        :returns: The converted image (3 x H x W).
-        :raises ValueError: If the image shape is not recognized.
-        """
-        # We check if the input has a channel dimension.
-        channel = None if len(image.shape) == 2 else len(image.shape) - 3
-        # If we don`t have channels we add a dimension.
-        image = image.unsqueeze(0) if channel is None else image
-
-        rep_mask = [1] * len(image.shape)  # A repetition mask for channel extrusions
-        if image.shape[channel] == 1:
-            # If we only have one channel we repeat it 3 times to make it rgb.
-            rep_mask[channel] = 3
-            return image.repeat(*rep_mask)
-        elif image.shape[channel] == 3:
-            return image
-        else:
-            raise ValueError(f"Unknown image shape. {image.shape}")
-
-    def _predict(self, x: Tensor) -> Tensor:
-        """
-        A wrapper to predict with additional conditions.
-
-        :param x: The image to be predicted.
-        :returns: The predicted labels.
-        """
-        y_hat = self._sut(x)
-        return y_hat if self._restrict_classes is None else y_hat[:, self._restrict_classes]

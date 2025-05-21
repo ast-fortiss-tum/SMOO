@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
@@ -7,6 +8,7 @@ import torch
 from .._candidate import Candidate, CandidateList
 
 
+@dataclass
 class MixCandidate(Candidate):
     """A simple container for candidate elements used in style mixing/ interpolation."""
 

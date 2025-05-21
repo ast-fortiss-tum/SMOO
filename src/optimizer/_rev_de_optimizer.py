@@ -3,11 +3,11 @@ from typing import Union
 import numpy as np
 from numpy.typing import NDArray
 
-from ._learner import Learner
+from ._optimizer import Optimizer
 from .auxiliary_components import OptimizerCandidate
 
 
-class RevDELearner(Learner):
+class RevDEOptimizer(Optimizer):
     """
     A Reverse Differential Evolutionary Learner.
     For theory see: https://arxiv.org/pdf/2002.02869.

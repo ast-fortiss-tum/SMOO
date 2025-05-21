@@ -7,8 +7,8 @@ from numpy.typing import NDArray
 from .auxiliary_components import OptimizerCandidate
 
 
-class Learner(ABC):
-    """An abstract learner class."""
+class Optimizer(ABC):
+    """An abstract optimizer class."""
 
     # Standard elements.
     _best_candidates: list[OptimizerCandidate]
@@ -16,7 +16,7 @@ class Learner(ABC):
     _x_current: NDArray
     _fitness: tuple[NDArray, ...]
 
-    _learner_type: Type
+    _optimizer_type: Type
     _num_objectives: int
     _bounds: tuple[int, int]
 
@@ -126,7 +126,7 @@ class Learner(ABC):
 
         :returns: The type.
         """
-        return self._learner_type
+        return self._optimizer_type
 
     @property
     def n_var(self) -> int:

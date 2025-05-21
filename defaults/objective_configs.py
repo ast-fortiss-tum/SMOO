@@ -1,12 +1,12 @@
 """A collection of metric selections for specific objectives."""
 
-from ..criteria.classifier_criteria import UncertaintyThreshold
-from ..criteria.image_criteria import CFrobeniusDistance
-from ..criteria.objective_functions import (
+from src.objectives.classifier_criteria import (
     DynamicConfidenceBalance,
     IsMisclassified,
     NaiveConfidenceBalance,
+    UncertaintyThreshold,
 )
+from src.objectives.image_criteria import CFrobeniusDistance
 
 """
 ### ADVERSARIAL TESTING:
