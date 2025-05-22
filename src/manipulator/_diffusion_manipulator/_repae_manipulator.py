@@ -130,19 +130,21 @@ class REPAEManipulator(Manipulator):
 
         """Now we step through the diffusion process and manipulate accordingly."""
         manip_xt, manip_y = candidates[0].xt, candidates[0].class_embedding
-        x_cur = manip_xt[0]
         """The manipulation process."""
-        for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
-            x_manip = torch.sum(
-                candidates.xts[i] * weights_x[i][:, None, None, None], dim=0, keepdim=True
-            ).float()  # N x X -> 1 x X
-            x_manip = (manip_xt[i] + x_manip) / 2
-            y_manip = torch.sum(
-                candidates.class_embeddings[i] * weights_y[i][:, None], dim=0, keepdim=True
-            ).float()  # N x Y -> 1 x Y
-            x_cur = self._sample(t_cur, x_manip, y_manip, t_next - t_cur)
+        # Here we manipulate class embeddings through diffusion.
+        weighted_class_embeddings = candidates.class_embeddings * weights_y[...,None]  # N x D x Y
+        y_manip = torch.sum(weighted_class_embeddings, dim=0, keepdim=True).float()  # N x D x Y -> 1 x D x Y
 
-            manip_y[i] = y_manip
+        for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
+            # Here we manipulate the diffusion steps.
+            weighted_candidates = candidates.xts[:,i,...] * weights_x[:,i][:, None, None, None]  # N x X
+            x_manip = torch.sum(weighted_candidates, dim=0, keepdim=True).float()  # N x X -> 1 x X
+            x_manip = (manip_xt[i] + x_manip) / 2
+
+            x_cur = self._sample(t=t_cur, x=x_manip, y=y_manip[:,i,...], step=t_next - t_cur)
+
+            # Log progress.
+            manip_y[i] = y_manip[:,i,...]
             manip_xt[i + 1] = x_cur
 
         """Return a candidate with the manipulation history if wanted."""
@@ -173,7 +175,8 @@ class REPAEManipulator(Manipulator):
         """
         with torch.no_grad():
             t_curr = torch.ones(y.shape[0], device=self._device) * t
-            if cfg_scale > 1.0 and guidance_bounds[1] >= t >= guidance_bounds[0]:
+            cond = cfg_scale > 1.0 and guidance_bounds[1] >= t >= guidance_bounds[0]
+            if cond:
                 model_input = torch.cat([x] * 2, dim=0)
                 y_null = self._embed_y([1000] * y.shape[0])
                 y_curr = torch.cat((y, y_null), dim=0)
@@ -183,7 +186,7 @@ class REPAEManipulator(Manipulator):
 
             d_cur = self._model.partial_inference(x=model_input, t=t_curr, y=y_curr)
 
-            if cfg_scale > 1.0 and guidance_bounds[1] >= t >= guidance_bounds[0]:
+            if cond:
                 d_cur_cond, d_cur_uncond = d_cur.chunk(2)
                 d_cur = d_cur_uncond + cfg_scale * (d_cur_cond - d_cur_uncond)
 
@@ -192,7 +195,7 @@ class REPAEManipulator(Manipulator):
 
     def get_diff_steps(
         self, class_labels: list[int], n_steps: int = 50
-    ) -> tuple[list[Tensor], Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         """
         Get latent information for all diffusion steps.
 
@@ -207,36 +210,14 @@ class REPAEManipulator(Manipulator):
             self._latent_size,
             device=self._device,
         )
-        xs = [x_cur]
-
         t_steps = torch.linspace(1, 0, n_steps + 1, device=self._device)
         y_cur = self._embed_y(class_labels)
-        xs.extend(self.finish_diffusion(x_cur, y_cur, 0, t_steps, return_all=True))
-        return xs, y_cur
 
-    def finish_diffusion(
-        self,
-        x_cur: Tensor,
-        y_cur: Tensor,
-        t_cur_index: int,
-        t_steps: Tensor,
-        return_all: bool = False,
-    ) -> Tensor:
-        """
-        Finish diffusion process from specific time step.
-
-        :param x_cur: Current latent vector.
-        :param y_cur: Current class latent vector.
-        :param t_cur_index: Current time step index in range.
-        :param t_steps: The time step range.
-        :param return_all: Whether to return all diffusion steps or just the last one.
-        :returns: The finished diffusion process or the last latent vector.
-        """
         xs = []
-        for t_cur, t_next in zip(t_steps[t_cur_index:-1], t_steps[t_cur_index + 1 :]):
+        for t_cur, t_next in zip(t_steps[:-1], t_steps[1 :]):
             x_cur = self._sample(t=t_cur, x=x_cur, y=y_cur, step=t_next - t_cur)
             xs.append(x_cur)
-        return xs if return_all else xs[-1]
+        return torch.stack(xs).squeeze(), y_cur
 
     def get_image(self, z: Tensor) -> Tensor:
         """
@@ -247,7 +228,7 @@ class REPAEManipulator(Manipulator):
         """
         element = self._vae.decode((z / self._latents_scale) + self._latents_bias).sample
         element = (element + 1) / 2.0
-        element = torch.clamp(255.0 * element, 0, 255)
+        element = torch.clamp(element, 0, 1)
         return element
 
     def _prepare_cuda(self) -> None:

@@ -1,4 +1,4 @@
-from typing import Any, Type, Union
+from typing import Any, Type
 
 import numpy as np
 from numpy.typing import NDArray
@@ -23,17 +23,15 @@ class PymooOptimizer(Optimizer):
 
     def __init__(
         self,
-        n_var: int,
         bounds: tuple[int, int],
         algorithm: Type[Algorithm],
         algo_params: dict[str, Any],
         num_objectives: int,
-        solution_shape: tuple[int, ...] = (1,)
+        solution_shape: tuple[int, ...]
     ) -> None:
         """
         Initialize the genetic learner.
 
-        :param n_var: The number of variables in the problem (mixing dimensions targeted).
         :param bounds: Bounds for the optimizer.
         :param algorithm: The pymoo Algorithm.
         :param algo_params: Parameters for the pymoo Algorithm.
@@ -42,12 +40,11 @@ class PymooOptimizer(Optimizer):
         # TODO: shared attributes in super init
         self._pymoo_algo = algorithm(**algo_params, save_history=True)
 
-        self._n_var = n_var
+        self._n_var = int(np.prod(solution_shape))
         self._shape = solution_shape
-        assert np.prod(solution_shape) == n_var, f"ERROR: tried to reshape {n_var} variables into {solution_shape}"
 
         self._bounds = lb, ub = bounds
-        self._problem = Problem(n_var=n_var, n_obj=num_objectives, xl=lb, xu=ub, vtype=float)
+        self._problem = Problem(n_var=self._n_var, n_obj=num_objectives, xl=lb, xu=ub, vtype=float)
         self._pymoo_algo.setup(self._problem, termination=NoTermination())
 
         self._pop_current = self._pymoo_algo.ask()
@@ -55,7 +52,7 @@ class PymooOptimizer(Optimizer):
 
         self._best_candidates = [
             OptimizerCandidate(
-                solution=np.random.uniform(high=ub, low=lb, size=n_var),
+                solution=np.random.uniform(high=ub, low=lb, size=self._n_var),
                 fitness=[np.inf] * num_objectives,
             )
         ]

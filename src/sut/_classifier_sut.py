@@ -21,6 +21,7 @@ class ClassifierSUT(SUT):
         :param use_mcd: Whether to use Monte Carlo Dropout or not.
         """
         self._model = MonteCarloDropoutScaffold(model) if use_mcd else model
+        self._model.eval()
         self._softmax = nn.Softmax(dim=1)
 
         self._apply_softmax = apply_softmax

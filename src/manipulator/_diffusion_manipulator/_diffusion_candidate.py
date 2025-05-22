@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Union
 
 import torch
 from torch import Tensor
@@ -13,21 +12,20 @@ from .._candidate import Candidate, CandidateList
 class DiffusionCandidate(Candidate):
     """A candidate solution for the diffusion based manipulator."""
 
-    xt: list[Tensor]  # The diffusion steps.
-    class_embedding: Union[list[Tensor], Tensor]  # The class embedding.
+    xt: Tensor  # The diffusion steps (Diffusion Steps x Image Embedding).
+    class_embedding: Tensor  # The class embedding (Diffusion Steps x Class Embedding).
 
     def __post_init__(self) -> None:
         """Preprocessing of some elements after intialization."""
         if isinstance(self.class_embedding, Tensor):
-            self.class_embedding = [self.class_embedding] * len(self.xt)
-
+            self.class_embedding = torch.stack([self.class_embedding.squeeze()] * len(self.xt), dim=0)
 
 class DiffusionCandidateList(CandidateList):
     """A list of candidate solutions for the diffusion based manipulator."""
 
     _candidates: list[DiffusionCandidate]
-    _class_embeddings: list[Tensor]
-    _xts: list[Tensor]
+    _class_embeddings: Tensor
+    _xts: Tensor  # N x  Diffusion Steps x Image Embedding
 
     def __init__(self, *initial_candidates: DiffusionCandidate) -> None:
         """
@@ -37,26 +35,26 @@ class DiffusionCandidateList(CandidateList):
         """
         super().__init__(*initial_candidates)
         self._candidates = list(initial_candidates)
-        self._xts, self._class_embeddings = [], []
-        for t in range(len(self._candidates[0].xt)):
-            self._xts.append(torch.concat([c.xt[t] for c in self._candidates], dim=0))
-            self._class_embeddings.append(
-                torch.concat([c.class_embedding[t] for c in self._candidates], dim=0)
-            )
+        self._xts = torch.stack([c.xt for c in self._candidates], dim=0)
+        self._class_embeddings = torch.stack([c.class_embedding for c in self._candidates], dim=0)
 
     @property
-    def class_embeddings(self) -> list[Tensor]:
+    def class_embeddings(self) -> Tensor:
         """
         Get the class embeddings for the entire candidate list as a single Tensor.
+
+        The shape of the embeddings is as follows: Num candidates x Diffusion Steps x Class Embeddings
 
         :return: The class embeddings for the candidates.
         """
         return self._class_embeddings
 
     @property
-    def xts(self) -> list[Tensor]:
+    def xts(self) -> Tensor:
         """
         Get a combined diffusion process for all candidates.
+
+        The shape of the embeddings is as follows: Num candidates x Diffusion Steps x Latent Vectors
 
         :returns: The diffusion process for all candidates.
         """
@@ -66,7 +64,7 @@ class DiffusionCandidateList(CandidateList):
         return self._candidates[index]
 
     @classmethod
-    def from_diffusion_output(cls, xs: list[Tensor], emb: Tensor) -> DiffusionCandidateList:
+    def from_diffusion_output(cls, xs: Tensor, emb: Tensor) -> DiffusionCandidateList:
         """
         Get a DiffusionCandidate list from a diffusion output.
 
@@ -77,7 +75,6 @@ class DiffusionCandidateList(CandidateList):
         num_candidates = emb.shape[0]
         candidates = []
         for i in range(num_candidates):
-            xt = [elem[i] for elem in xs]
-            candidate = DiffusionCandidate(class_embedding=emb[i], xt=xt)
+            candidate = DiffusionCandidate(class_embedding=emb[i], xt=xs[:,i,...])
             candidates.append(candidate)
         return DiffusionCandidateList(*candidates)

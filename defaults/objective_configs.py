@@ -4,7 +4,7 @@ from src.objectives.classifier_criteria import (
     DynamicConfidenceBalance,
     IsMisclassified,
     NaiveConfidenceBalance,
-    UncertaintyThreshold,
+    UncertaintyThreshold, AdversarialDistance,
 )
 from src.objectives.image_criteria import CFrobeniusDistance
 
@@ -20,11 +20,11 @@ But for optimization continuous problems produce better results, therefore we us
 """
 DYNAMIC_TARGETED_ADVERSARIAL_TESTING = [
     CFrobeniusDistance(),
-    DynamicConfidenceBalance(inverse=True, target_primary=False),
+    AdversarialDistance(),
 ]
 TARGETED_ADVERSARIAL_TESTING = [
     CFrobeniusDistance(),
-    NaiveConfidenceBalance(inverse=True, target_primary=False),
+    AdversarialDistance(target_pair=True),
 ]
 
 """

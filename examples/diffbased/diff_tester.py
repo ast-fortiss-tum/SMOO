@@ -53,33 +53,42 @@ class DiffTester(SMOO):
         )
 
     def test(self):
-        # TODO: the follwoing should be config
-        classes = list(range(10))
-        sample_per_class = 10
-        generations = 100
+        # TODO: the following should be config
+        classes = [0]
+        sample_per_class = 1
+        generations = 25
 
         exp_start = datetime.now()
         for class_id, sample_idx in product(classes, range(sample_per_class)):
             self._init_wandb(exp_start, class_id, self._silent)  # Initialize Wandb run for logging
 
-            xt, emb = self._manipulator.get_diff_steps([class_id])
-            image = self._manipulator.get_image(xt[-1])
-            self._im_rgb = image.squeeze()
-            y_hat = self._process(image)
-            # TODO: check if SUT predicts correctly
+            while True:
+                xt, emb = self._manipulator.get_diff_steps([class_id])
+                image = self._manipulator.get_image(xt[-1])
+                self._im_rgb = image.squeeze()
+                y_hat = self._process(image)
+                if torch.argmax(y_hat) == class_id:
+                    break
+                print(f"Failed to find initial candidate for {class_id}, predicted {torch.argmax(y_hat)}")
+
             _, second, *_ = torch.argsort(y_hat[0], descending=True)
 
-            target = DiffusionCandidate(*self._manipulator.get_diff_steps([second]))
-            source = DiffusionCandidate(xt, emb)
+            while True:
+                xtd, embd = self._manipulator.get_diff_steps([second])
+                y_hatd = self._process(self._manipulator.get_image(xtd[-1]))
+                if torch.argmax(y_hatd) == second:
+                    break
+                print(f"Failed to find target candidate for {second}, predicted {torch.argmax(y_hatd)}")
 
+            source, target = DiffusionCandidate(xt, emb), DiffusionCandidate(xtd, embd)
             candidates = DiffusionCandidateList(source, target)
 
             for _ in range(generations):
                 weights = self._optimizer.get_x_current()
                 images = []
                 for xw, yw in zip(weights[:,0,:], weights[:,1,:]): # TODO: this can be more efficient, batchwise
-                    x_weights = torch.tensor(np.stack([xw, 1-xw], axis=1), device=self._manipulator._device)
-                    y_weights = torch.tensor(np.stack([yw, 1 - yw], axis=1), device=self._manipulator._device)
+                    x_weights = torch.tensor(np.stack([xw, 1-xw], axis=1), device=self._manipulator._device).T
+                    y_weights = torch.tensor(np.stack([yw, 1 - yw], axis=1), device=self._manipulator._device).T
 
                     x_new = self._manipulator.manipulate(candidates, x_weights, y_weights)
                     images.append(self._manipulator.get_image(x_new).squeeze())
@@ -95,7 +104,7 @@ class DiffTester(SMOO):
                         [
                             c.evaluate(
                                 images=ims,
-                                logits=yp.cpu().numpy(),
+                                logits=yp.cpu(),
                                 label_targets=lt,
                             )
                             for c in self._objectives
