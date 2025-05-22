@@ -190,7 +190,8 @@ class MimicryTester(SMOO):
         :returns: The images generated, and the corresponding fitness and the softmax predictions.
         """
         # Get the initial population of style mixing conditions and weights
-        sm_cond_arr, sm_weights_arr = self._optimizer.get_x_current()
+        sm_weights_arr = self._optimizer.get_x_current()
+        sm_cond_arr = np.zeros_like(sm_weights_arr)
         assert (
             0 <= sm_cond_arr.max() < self._num_ws
         ), f"Error: StyleMixing Conditions reference indices of {sm_cond_arr.max()}, but we only have {self._num_ws} elements."
