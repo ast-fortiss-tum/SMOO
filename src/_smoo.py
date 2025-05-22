@@ -22,6 +22,7 @@ class SMOO(ABC):
     _objectives: list[Criterion]
 
     _restrict_classes: Optional[list[int]]
+    _silent: bool
 
     def __init__(
         self,

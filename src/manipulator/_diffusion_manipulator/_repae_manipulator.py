@@ -8,9 +8,10 @@ from ._diffusion_candidate import DiffusionCandidate, DiffusionCandidateList
 from .repae.models.autoencoder import vae_models
 from .repae.models.sit import SiT_models
 from .repae.utils import load_encoders
+from .. import Manipulator
 
 
-class REPAEManipulator:
+class REPAEManipulator(Manipulator):
 
     _device: torch.device
 
@@ -111,8 +112,8 @@ class REPAEManipulator:
     def manipulate(
         self,
         candidates: DiffusionCandidateList,
-        weights_x: list[Tensor],
-        weights_y: list[Tensor],
+        weights_x: Tensor,
+        weights_y: Tensor,
         return_manipulation_history: bool = False,
     ) -> Union[Tensor, tuple[Tensor, DiffusionCandidate]]:
         """
@@ -134,11 +135,11 @@ class REPAEManipulator:
         for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
             x_manip = torch.sum(
                 candidates.xts[i] * weights_x[i][:, None, None, None], dim=0, keepdim=True
-            )  # N x X -> 1 x X
+            ).float()  # N x X -> 1 x X
             x_manip = (manip_xt[i] + x_manip) / 2
             y_manip = torch.sum(
                 candidates.class_embeddings[i] * weights_y[i][:, None], dim=0, keepdim=True
-            )  # N x Y -> 1 x Y
+            ).float()  # N x Y -> 1 x Y
             x_cur = self._sample(t_cur, x_manip, y_manip, t_next - t_cur)
 
             manip_y[i] = y_manip
@@ -246,7 +247,7 @@ class REPAEManipulator:
         """
         element = self._vae.decode((z / self._latents_scale) + self._latents_bias).sample
         element = (element + 1) / 2.0
-        element = torch.clamp(255.0 * element, 0, 255).permute(0, 2, 3, 1).type(torch.uint8)
+        element = torch.clamp(255.0 * element, 0, 255)
         return element
 
     def _prepare_cuda(self) -> None:

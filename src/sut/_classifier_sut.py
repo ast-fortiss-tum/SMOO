@@ -1,4 +1,4 @@
-from torch import Module, Tensor, nn
+from torch import  Tensor, nn
 
 from ._sut import SUT
 from .auxiliary_components import MonteCarloDropoutScaffold
@@ -12,7 +12,7 @@ class ClassifierSUT(SUT):
 
     _apply_softmax: bool
 
-    def __init__(self, model: Module, apply_softmax: bool = False, use_mcd: bool = False) -> None:
+    def __init__(self, model: nn.Module, apply_softmax: bool = False, use_mcd: bool = False) -> None:
         """
         Initialize the classifier SUT.
 

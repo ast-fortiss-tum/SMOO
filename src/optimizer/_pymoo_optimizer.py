@@ -28,6 +28,7 @@ class PymooOptimizer(Optimizer):
         algorithm: Type[Algorithm],
         algo_params: dict[str, Any],
         num_objectives: int,
+        solution_shape: tuple[int, ...] = (1,)
     ) -> None:
         """
         Initialize the genetic learner.
@@ -38,8 +39,12 @@ class PymooOptimizer(Optimizer):
         :param algo_params: Parameters for the pymoo Algorithm.
         :param num_objectives: The number of objectives the learner can handle.
         """
+        # TODO: shared attributes in super init
         self._pymoo_algo = algorithm(**algo_params, save_history=True)
+
         self._n_var = n_var
+        self._shape = solution_shape
+        assert np.prod(solution_shape) == n_var, f"ERROR: tried to reshape {n_var} variables into {solution_shape}"
 
         self._bounds = lb, ub = bounds
         self._problem = Problem(n_var=n_var, n_obj=num_objectives, xl=lb, xu=ub, vtype=float)
@@ -56,7 +61,7 @@ class PymooOptimizer(Optimizer):
         ]
         self._previous_best = self._best_candidates.copy()
 
-        self._learner_type = type(self._pymoo_algo)
+        self._optimizer_type = type(self._pymoo_algo)
         self._num_objectives = num_objectives
 
     def new_population(self) -> None:
@@ -70,13 +75,10 @@ class PymooOptimizer(Optimizer):
         self._pop_current = self._pymoo_algo.ask()
         self._x_current = self._normalize_to_bounds(self._pop_current.get("X"))
 
-    def get_x_current(self) -> tuple[Union[NDArray, None], NDArray]:
+    def get_x_current(self) -> NDArray:
         """
         Return the current population in specific format.
 
         :return: The population as array of smx indices and smx weights.
         """
-        # TODO: for now only one element can be used to mix styles -> should be n elements.
-        smx_cond = np.zeros_like(self._x_current)
-        smx_weights = self._x_current
-        return smx_cond, smx_weights
+        return self._x_current.reshape((self._x_current.shape[0], *self._shape))

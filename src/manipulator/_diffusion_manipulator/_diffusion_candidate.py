@@ -13,8 +13,8 @@ from .._candidate import Candidate, CandidateList
 class DiffusionCandidate(Candidate):
     """A candidate solution for the diffusion based manipulator."""
 
-    class_embedding: Union[list[Tensor], Tensor]  # The class embedding.
     xt: list[Tensor]  # The diffusion steps.
+    class_embedding: Union[list[Tensor], Tensor]  # The class embedding.
 
     def __post_init__(self) -> None:
         """Preprocessing of some elements after intialization."""
@@ -39,9 +39,9 @@ class DiffusionCandidateList(CandidateList):
         self._candidates = list(initial_candidates)
         self._xts, self._class_embeddings = [], []
         for t in range(len(self._candidates[0].xt)):
-            self._xts.append(torch.stack([c.xt[t] for c in self._candidates], dim=0))
+            self._xts.append(torch.concat([c.xt[t] for c in self._candidates], dim=0))
             self._class_embeddings.append(
-                torch.stack([c.class_embedding[t] for c in self._candidates], dim=0)
+                torch.concat([c.class_embedding[t] for c in self._candidates], dim=0)
             )
 
     @property
