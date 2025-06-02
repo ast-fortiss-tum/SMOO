@@ -30,11 +30,11 @@ class Optimizer(ABC):
         ...
 
     @abstractmethod
-    def get_x_current(self) -> tuple[Union[NDArray, None], NDArray]:
+    def get_x_current(self) -> NDArray:
         """
         Return the current population in specific format.
 
-        :return: The population as array of smx indices and smx weights.
+        :return: The population as array.
         """
         ...
 
