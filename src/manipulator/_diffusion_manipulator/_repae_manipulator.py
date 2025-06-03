@@ -4,6 +4,7 @@ from typing import Callable, Union
 import torch
 from torch import Tensor, nn
 
+from examples.manipulate_diffusion_example import y_weights
 from ._diffusion_candidate import DiffusionCandidate, DiffusionCandidateList
 from .repae.models.autoencoder import vae_models
 from .repae.models.sit import SiT_models
@@ -31,24 +32,27 @@ class REPAEManipulator(Manipulator):
     _embed_y: Callable[[list[Tensor]], Tensor]
     _embed_t: Callable[[list[Tensor]], Tensor]
 
+    _manip_function: Callable[..., DiffusionCandidate]
+
     def __init__(
         self,
-        image_resolution: int,
+
         model_file: str,
         vae: str = "f16d32",
         model: str = "SiT-XL/1",
         encoder: str = "dinov2-vit-b",
+        image_resolution: int = 256,
         num_classes: int = 1000,
         batch_size: int = 8,
     ) -> None:
         """
         Initialize the manipulator based on REPA-E diffusion models.
 
-        :param image_resolution: Image resolution for generation.
         :param model_file: Model file to load weights from.
         :param vae: The type of VAE model to use.
         :param model: The type of model to use.
         :param encoder: The type of encoder to use.
+        :param image_resolution: Image resolution for generation.
         :param num_classes: Number of classes in the dataset.
         :param batch_size: Batch size to use for generation of samples.
         """
@@ -128,30 +132,92 @@ class REPAEManipulator(Manipulator):
         n_steps = len(candidates[0].xt) - 1
         t_steps = torch.linspace(1, 0, n_steps + 1, device=self._device)  # Define step range.
 
-        """Now we step through the diffusion process and manipulate accordingly."""
-        manip_xt, manip_y = candidates[0].xt, candidates[0].class_embedding
         """The manipulation process."""
-        # Here we manipulate class embeddings through diffusion.
-        weighted_class_embeddings = candidates.class_embeddings * weights_y[...,None]  # N x D x Y
-        y_manip = torch.sum(weighted_class_embeddings, dim=0, keepdim=True).float()  # N x D x Y -> 1 x D x Y
-
-        for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
-            # Here we manipulate the diffusion steps.
-            weighted_candidates = candidates.xts[:,i,...] * weights_x[:,i][:, None, None, None]  # N x X
-            x_manip = torch.sum(weighted_candidates, dim=0, keepdim=True).float()  # N x X -> 1 x X
-            x_manip = (manip_xt[i] + x_manip) / 2
-
-            x_cur = self._sample(t=t_cur, x=x_manip, y=y_manip[:,i,...], step=t_next - t_cur)
-
-            # Log progress.
-            manip_y[i] = y_manip[:,i,...]
-            manip_xt[i + 1] = x_cur
+        manip_cand = self._manip_function(
+            t_steps=t_steps,
+            candidates=candidates,
+            xt_weights=weights_x,
+            y_weights=weights_y,
+            xt_template= candidates[0].xt,
+            y_template= candidates[0].class_embedding,
+        )
 
         """Return a candidate with the manipulation history if wanted."""
-        if return_manipulation_history:
-            manip_candidate = DiffusionCandidate(class_embedding=manip_y, xt=manip_xt)
-            return x_cur, manip_candidate
-        return x_cur
+        return (manip_cand.xt[-1], manip_cand) if return_manipulation_history else manip_cand.xt[-1]
+
+
+    def _manip_aggregate_new(
+            self,*,
+            t_steps: Tensor,
+            candidates: DiffusionCandidateList,
+            xt_weights: Tensor,
+            y_weights: Tensor,
+            xt_template: Tensor,
+            y_template: Tensor,
+    ) -> DiffusionCandidate:
+        """
+        Manipulate latent vector of diffusion processes and aggregate them on the new candidate.
+
+        :param t_steps: Time steps to manipulate.
+        :param candidates: Candidates to manipulate with.
+        :param xt_weights: Weights to manipulate diffusion process.
+        :param y_weights: Weights to manipulate class embeddings with.
+        :param xt_template: A x_t series as template for the returned candidate.
+        :param y_template: A y_t series as template for the returned candidate.
+        :returns: The resulting diffusion candidate.
+        """
+        weighted_class_embeddings = candidates.class_embeddings * y_weights[..., None]  # N x D x Y
+        y_manip = torch.sum(weighted_class_embeddings, dim=0, keepdim=True).float()  # N x D x Y -> 1 x D x Y
+        for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
+            # Here we manipulate the diffusion steps.
+            weighted_candidates = candidates.xts[:, i, ...] * xt_weights[:, i][:, None, None, None]  # N x X
+            x_manip = torch.sum(weighted_candidates, dim=0, keepdim=True).float()  # N x X -> 1 x X
+            x_manip = (xt_template[i] + x_manip) / 2
+
+            x_cur = self._sample(t=t_cur, x=x_manip, y=y_manip[:, i, ...], step=t_next - t_cur)
+
+            # Log progress.
+            y_template[i] = y_manip[:, i, ...]
+            xt_template[i + 1] = x_cur
+        return DiffusionCandidate(class_embedding=y_template, xt=xt_template)
+
+
+    def _manip_aggregate_base(
+            self,*,
+            t_steps: Tensor,
+            candidates: DiffusionCandidateList,
+            xt_weights: Tensor,
+            y_weights: Tensor,
+            xt_template: Tensor,
+            y_template: Tensor,
+    ) -> DiffusionCandidate:
+        """
+        Manipulate latent vector of diffusion processes and aggregate them on the base candidate.
+
+        :param t_steps: Time steps to manipulate.
+        :param candidates: Candidates to manipulate with.
+        :param xt_weights: Weights to manipulate diffusion process.
+        :param y_weights: Weights to manipulate class embeddings with.
+        :param xt_template: A x_t series as template for the returned candidate.
+        :param y_template: A y_t series as template for the returned candidate.
+        :returns: The resulting diffusion candidate.
+        """
+        weighted_class_embeddings = candidates.class_embeddings * y_weights[..., None]  # N x D x Y
+        y_manip = torch.sum(weighted_class_embeddings, dim=0, keepdim=True).float()  # N x D x Y -> 1 x D x Y
+        # TODO: make the interpolation scheme from: "Interpolating between Images with Diffusion Models"
+        for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
+            # Here we manipulate the diffusion steps.
+            weighted_candidates = candidates.xts[:, i, ...] * xt_weights[:, i][:, None, None, None]  # N x X
+            x_manip = torch.sum(weighted_candidates, dim=0, keepdim=True).float()  # N x X -> 1 x X
+            x_manip = (xt_template[i] + x_manip) / 2
+
+            x_cur = self._sample(t=t_cur, x=x_manip, y=y_manip[:, i, ...], step=t_next - t_cur)
+
+            # Log progress.
+            y_template[i] = y_manip[:, i, ...]
+            xt_template[i + 1] = x_cur
+        return DiffusionCandidate(class_embedding=y_template, xt=xt_template)
+
 
     def _sample(
         self,
