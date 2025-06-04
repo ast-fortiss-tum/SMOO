@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
+from typing import Union
 import torch
 from torch import Tensor
 
@@ -27,21 +27,24 @@ class DiffusionCandidateList(CandidateList):
     _candidates: list[DiffusionCandidate]
     _class_embeddings: Tensor
     _xts: Tensor  # N x  Diffusion Steps x Image Embedding
-    _xts_origin: Tensor  # N_o x  Diffusion Steps x Image Embedding
-    _xts_target: Tensor  # N_t x  Diffusion Steps x Image Embedding
 
-    def __init__(self, *initial_candidates: DiffusionCandidate) -> None:
+    _origin: Union[DiffusionCandidateList, None] = None
+    _target: Union[DiffusionCandidateList, None] = None
+
+    def __init__(self, *initial_candidates: DiffusionCandidate, is_child: bool = False) -> None:
         """
         A candidate list for the diffusion based manipulator.
 
         :param initial_candidates: The initial candidate solutions used for manipulation.
+        :param is_child: Whether the candidate list is a child of another candidate list.
         """
         super().__init__(*initial_candidates)
         self._candidates = list(initial_candidates)
-
         self._xts = torch.stack([c.xt for c in self._candidates], dim=0)
-        self._xts_origin = torch.stack([c.xt for c in self._candidates if c.is_origin], dim=0)
-        self._xts_target = torch.stack([c.xt for c in self._candidates if not c.is_origin], dim=0)
+
+        if not is_child:
+            self._origin = DiffusionCandidateList(*(c for c in self._candidates if c.is_origin), is_child=True)
+            self._target = DiffusionCandidateList(*(c for c in self._candidates if not c.is_origin), is_child=True)
 
         self._class_embeddings = torch.stack([c.class_embedding for c in self._candidates], dim=0)
 
@@ -68,26 +71,22 @@ class DiffusionCandidateList(CandidateList):
         return self._xts
 
     @property
-    def xts_origin(self) -> Tensor:
+    def origin(self) -> Union[DiffusionCandidateList, None]:
         """
-        Get a combined diffusion process for origin candidates.
+        Return origin diffusion candidates if applicable.
 
-        The shape of the embeddings is as follows: Num origin candidates x Diffusion Steps x Latent Vectors
-
-        :returns: The diffusion process for all candidates.
+        :returns: The origin diffusion candidates.
         """
-        return self._xts_origin
+        return self._origin
 
     @property
-    def xts_target(self) -> Tensor:
+    def target(self) -> Union[DiffusionCandidateList, None]:
         """
-        Get a combined diffusion process for target candidates.
+        Return target diffusion candidates if applicable.
 
-        The shape of the embeddings is as follows: Num target candidates x Diffusion Steps x Latent Vectors
-
-        :returns: The diffusion process for all candidates.
+        :returns: The origin diffusion candidates.
         """
-        return self._xts_target
+        return self._target
 
 
     def __getitem__(self, index: int) -> DiffusionCandidate:

@@ -4,7 +4,6 @@ from typing import Callable, Union
 import torch
 from torch import Tensor, nn
 
-from examples.manipulate_diffusion_example import y_weights
 from ._diffusion_candidate import DiffusionCandidate, DiffusionCandidateList
 from .repae.models.autoencoder import vae_models
 from .repae.models.sit import SiT_models
@@ -44,6 +43,7 @@ class REPAEManipulator(Manipulator):
         image_resolution: int = 256,
         num_classes: int = 1000,
         batch_size: int = 8,
+        manipulation_strategy: str = "base"
     ) -> None:
         """
         Initialize the manipulator based on REPA-E diffusion models.
@@ -55,6 +55,8 @@ class REPAEManipulator(Manipulator):
         :param image_resolution: Image resolution for generation.
         :param num_classes: Number of classes in the dataset.
         :param batch_size: Batch size to use for generation of samples.
+        :param manipulation_strategy: Manipulation strategy to use.
+        :raises ValueError: If manipulation_strategy is not supported.
         """
         self._prepare_cuda()
         self._batch_size = batch_size
@@ -113,6 +115,13 @@ class REPAEManipulator(Manipulator):
             torch.tensor(y, device=self._device), self._model.training
         )
 
+        if manipulation_strategy == "base":
+            self._manip_function = self._manip_aggregate_base
+        elif manipulation_strategy == "new":
+           self._manip_function = self._manip_aggregate_new
+        else:
+            raise ValueError(f"Strategy '{manipulation_strategy}' is not supported.'")
+
     def manipulate(
         self,
         candidates: DiffusionCandidateList,
@@ -138,8 +147,6 @@ class REPAEManipulator(Manipulator):
             candidates=candidates,
             xt_weights=weights_x,
             y_weights=weights_y,
-            xt_template= candidates[0].xt,
-            y_template= candidates[0].class_embedding,
         )
 
         """Return a candidate with the manipulation history if wanted."""
@@ -152,8 +159,6 @@ class REPAEManipulator(Manipulator):
             candidates: DiffusionCandidateList,
             xt_weights: Tensor,
             y_weights: Tensor,
-            xt_template: Tensor,
-            y_template: Tensor,
     ) -> DiffusionCandidate:
         """
         Manipulate latent vector of diffusion processes and aggregate them on the new candidate.
@@ -162,10 +167,10 @@ class REPAEManipulator(Manipulator):
         :param candidates: Candidates to manipulate with.
         :param xt_weights: Weights to manipulate diffusion process.
         :param y_weights: Weights to manipulate class embeddings with.
-        :param xt_template: A x_t series as template for the returned candidate.
-        :param y_template: A y_t series as template for the returned candidate.
         :returns: The resulting diffusion candidate.
         """
+        xt_template, y_template = candidates[0].xt, candidates[0].class_embedding
+
         weighted_class_embeddings = candidates.class_embeddings * y_weights[..., None]  # N x D x Y
         y_manip = torch.sum(weighted_class_embeddings, dim=0, keepdim=True).float()  # N x D x Y -> 1 x D x Y
         for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
@@ -188,8 +193,6 @@ class REPAEManipulator(Manipulator):
             candidates: DiffusionCandidateList,
             xt_weights: Tensor,
             y_weights: Tensor,
-            xt_template: Tensor,
-            y_template: Tensor,
     ) -> DiffusionCandidate:
         """
         Manipulate latent vector of diffusion processes and aggregate them on the base candidate.
@@ -198,19 +201,12 @@ class REPAEManipulator(Manipulator):
         :param candidates: Candidates to manipulate with.
         :param xt_weights: Weights to manipulate diffusion process.
         :param y_weights: Weights to manipulate class embeddings with.
-        :param xt_template: A x_t series as template for the returned candidate.
-        :param y_template: A y_t series as template for the returned candidate.
         :returns: The resulting diffusion candidate.
         """
-        weighted_class_embeddings = candidates.class_embeddings * y_weights[..., None]  # N x D x Y
-        y_manip = torch.sum(weighted_class_embeddings, dim=0, keepdim=True).float()  # N x D x Y -> 1 x D x Y
-        # TODO: make the interpolation scheme from: "Interpolating between Images with Diffusion Models"
+        xt_template, y_template = candidates.target.xts[0].clone(), candidates.origin[0].class_embedding.clone()
+        y_manip = self.slerp(candidates.origin[0].class_embedding, candidates.target[0].class_embedding, y_weights[0], dim=(0,)).unsqueeze(0).float()
         for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
-            # Here we manipulate the diffusion steps.
-            weighted_candidates = candidates.xts[:, i, ...] * xt_weights[:, i][:, None, None, None]  # N x X
-            x_manip = torch.sum(weighted_candidates, dim=0, keepdim=True).float()  # N x X -> 1 x X
-            x_manip = (xt_template[i] + x_manip) / 2
-
+            x_manip = self.slerp(candidates.origin.xts[0, i, ...], xt_template[i], xt_weights[0, i]).unsqueeze(0).float()
             x_cur = self._sample(t=t_cur, x=x_manip, y=y_manip[:, i, ...], step=t_next - t_cur)
 
             # Log progress.
@@ -305,3 +301,35 @@ class REPAEManipulator(Manipulator):
         ), "Sampling with DDP requires at least one GPU. sample.py supports CPU-only usage"
         torch.set_grad_enabled(False)
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
+    @staticmethod
+    def slerp(p: Tensor, q: Tensor, weight: Tensor, epsilon=1e-6, dim: Union[tuple[int, ...], None] = None) -> Tensor:
+        """
+        Implement spherical linear interpolation for Tensors.
+
+        :param p: The first tensor.
+        :param q: The second tensor.
+        :param weight: The weight for the interpolation.
+        :param epsilon: Cutoff value for precision.
+        :param dim: The dimensions to do operations across.
+        :return: The interpolated tensor.
+        """
+        p_norm = p / torch.linalg.norm(p, dim=dim, keepdim=True).clamp_min(epsilon)
+        q_norm = q / torch.linalg.norm(q, dim=dim, keepdim=True).clamp_min(epsilon)
+        dot = (p_norm * q_norm).sum(dim=dim, keepdim=True).clamp(-1.0 + epsilon, 1.0 - epsilon)
+
+        if weight.ndim == 0:
+            weight = weight.view(1)
+        for _ in range(p.ndim - weight.ndim):
+            weight = weight.unsqueeze(-1)
+
+        if torch.all(torch.abs(dot) > 1-(5*epsilon)):
+            wp, wq = 1-weight, weight
+        else:
+            omega = torch.arccos(dot)
+            sin_omega = torch.sin(omega).clamp_min(epsilon)
+            omega_w = omega * weight
+            wp = torch.sin(omega - omega_w) / sin_omega
+            wq = torch.sin(omega_w) / sin_omega
+        return wp * p + wq * q
