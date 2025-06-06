@@ -1,10 +1,11 @@
 """A collection of metric selections for specific objectives."""
 
 from src.objectives.classifier_criteria import (
+    AdversarialDistance,
     DynamicConfidenceBalance,
     IsMisclassified,
     NaiveConfidenceBalance,
-    UncertaintyThreshold, AdversarialDistance,
+    UncertaintyThreshold,
 )
 from src.objectives.image_criteria import CFrobeniusDistance
 
@@ -20,11 +21,11 @@ But for optimization continuous problems produce better results, therefore we us
 """
 DYNAMIC_TARGETED_ADVERSARIAL_TESTING = [
     CFrobeniusDistance(),
-    AdversarialDistance(),
+    AdversarialDistance(exp_decay_lambda=3.0),
 ]
 TARGETED_ADVERSARIAL_TESTING = [
     CFrobeniusDistance(),
-    AdversarialDistance(target_pair=True),
+    AdversarialDistance(target_pair=True, exp_decay_lambda=5.0),
 ]
 
 """

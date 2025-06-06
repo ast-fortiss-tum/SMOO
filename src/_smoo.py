@@ -33,6 +33,7 @@ class SMOO(ABC):
         objectives: list[Criterion],
         silent_wandb: bool,
         restrict_classes: Optional[list[int]],
+        use_wandb: bool,
     ):
         """
         Initialize the Neural Tester.
@@ -43,6 +44,7 @@ class SMOO(ABC):
         :param objectives: The objectives list.
         :param silent_wandb: Whether to silence wandb.
         :param restrict_classes: What classes to restrict to.
+        :param use_wandb: Whether to use wandb.
         """
 
         self._sut = sut
@@ -52,38 +54,37 @@ class SMOO(ABC):
 
         self._silent = silent_wandb
         self._restrict_classes = restrict_classes
+        self._use_wandb = use_wandb
 
     @abstractmethod
     def test(self):
         """Every workflow needs a testing loop."""
         ...
 
-    @staticmethod
-    def _maybe_log(results: dict) -> None:
+    def _maybe_log(self, results: dict) -> None:
         """
         Logs to Wandb if initialized.
 
         :param results: The results to log.
         """
-        try:
-            wandb.log(results)
-        except wandb.errors.Error as e:
-            logging.error(e)
-            pass
+        if self._use_wandb:
+            try:
+                wandb.log(results)
+            except wandb.errors.Error as e:
+                logging.error(e)
 
-    @staticmethod
-    def _maybe_summary(field: str, summary: Any) -> None:
+    def _maybe_summary(self, field: str, summary: Any) -> None:
         """
         Add elements to wandb Summary if initialized.
 
         :param field: The field to add an element to.
         :param summary: The element to add.
         """
-        try:
-            wandb.summary[field] = summary
-        except wandb.errors.Error as e:
-            logging.error(e)
-            pass
+        if self._use_wandb:
+            try:
+                wandb.summary[field] = summary
+            except wandb.errors.Error as e:
+                logging.error(e)
 
     @staticmethod
     def _get_time_seed() -> int:
@@ -126,6 +127,7 @@ class SMOO(ABC):
         :param x: The image to be predicted.
         :returns: The predicted labels.
         """
+        logging.info("Feeding Testcases to SUT.")
         y_hat = self._sut.process_input(x)
         # TODO: restrict classes is too specific maybe refractor.
         return y_hat if self._restrict_classes is None else y_hat[:, self._restrict_classes]

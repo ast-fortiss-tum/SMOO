@@ -19,7 +19,10 @@ class DiffusionCandidate(Candidate):
     def __post_init__(self) -> None:
         """Preprocessing of some elements after intialization."""
         if isinstance(self.class_embedding, Tensor):
-            self.class_embedding = torch.stack([self.class_embedding.squeeze()] * len(self.xt), dim=0)
+            self.class_embedding = torch.stack(
+                [self.class_embedding.squeeze()] * len(self.xt), dim=0
+            )
+
 
 class DiffusionCandidateList(CandidateList):
     """A list of candidate solutions for the diffusion based manipulator."""
@@ -31,20 +34,26 @@ class DiffusionCandidateList(CandidateList):
     _origin: Union[DiffusionCandidateList, None] = None
     _target: Union[DiffusionCandidateList, None] = None
 
-    def __init__(self, *initial_candidates: DiffusionCandidate, is_child: bool = False) -> None:
+    def __init__(
+        self, *initial_candidates: DiffusionCandidate, separate_candidates: bool = True
+    ) -> None:
         """
         A candidate list for the diffusion based manipulator.
 
         :param initial_candidates: The initial candidate solutions used for manipulation.
-        :param is_child: Whether the candidate list is a child of another candidate list.
+        :param separate_candidates: Whether the candidate list should separate target and origin candidates.
         """
         super().__init__(*initial_candidates)
         self._candidates = list(initial_candidates)
         self._xts = torch.stack([c.xt for c in self._candidates], dim=0)
 
-        if not is_child:
-            self._origin = DiffusionCandidateList(*(c for c in self._candidates if c.is_origin), is_child=True)
-            self._target = DiffusionCandidateList(*(c for c in self._candidates if not c.is_origin), is_child=True)
+        if separate_candidates:
+            self._origin = DiffusionCandidateList(
+                *(c for c in self._candidates if c.is_origin), separate_candidates=False
+            )
+            self._target = DiffusionCandidateList(
+                *(c for c in self._candidates if not c.is_origin), separate_candidates=False
+            )
 
         self._class_embeddings = torch.stack([c.class_embedding for c in self._candidates], dim=0)
 
@@ -88,18 +97,24 @@ class DiffusionCandidateList(CandidateList):
         """
         return self._target
 
-
     def __getitem__(self, index: int) -> DiffusionCandidate:
         return self._candidates[index]
 
     @classmethod
-    def from_diffusion_output(cls, xs: Tensor, emb: Tensor, are_origin: list[bool] = None) -> DiffusionCandidateList:
+    def from_diffusion_output(
+        cls,
+        xs: Tensor,
+        emb: Tensor,
+        are_origin: list[bool] = None,
+        separate_candidates: bool = True,
+    ) -> DiffusionCandidateList:
         """
         Get a DiffusionCandidate list from a diffusion output.
 
         :param xs: The diffusion steps for the individual candidates.
         :param emb: The class embeddings for the diffusion candidates.
         :param are_origin: Set origin seeds if applicable.
+        :param separate_candidates: Whether the candidate list should separate target and origin candidates.
         :returns: A DiffusionCandidate list.
         """
         num_candidates = emb.shape[0]
@@ -107,6 +122,6 @@ class DiffusionCandidateList(CandidateList):
             are_origin = [False] * num_candidates
         candidates = []
         for i, o in enumerate(are_origin):
-            candidate = DiffusionCandidate(class_embedding=emb[i], xt=xs[:,i,...], is_origin=o)
+            candidate = DiffusionCandidate(class_embedding=emb[i], xt=xs[:, i, ...], is_origin=o)
             candidates.append(candidate)
-        return DiffusionCandidateList(*candidates)
+        return DiffusionCandidateList(*candidates, separate_candidates=separate_candidates)

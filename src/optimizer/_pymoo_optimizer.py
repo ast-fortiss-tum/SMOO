@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Type
 
 import numpy as np
@@ -27,7 +28,7 @@ class PymooOptimizer(Optimizer):
         algorithm: Type[Algorithm],
         algo_params: dict[str, Any],
         num_objectives: int,
-        solution_shape: tuple[int, ...]
+        solution_shape: tuple[int, ...],
     ) -> None:
         """
         Initialize the genetic learner.
@@ -36,6 +37,7 @@ class PymooOptimizer(Optimizer):
         :param algorithm: The pymoo Algorithm.
         :param algo_params: Parameters for the pymoo Algorithm.
         :param num_objectives: The number of objectives the learner can handle.
+        :param solution_shape: The shape of the solution arrays.
         """
         # TODO: shared attributes in super init
         self._pymoo_algo = algorithm(**algo_params, save_history=True)
@@ -65,6 +67,7 @@ class PymooOptimizer(Optimizer):
         """
         Generate a new population.
         """
+        logging.info("Sampling new population...")
         static = StaticProblem(self._problem, F=np.column_stack(self._fitness))
         Evaluator().eval(static, self._pop_current)
         self._pymoo_algo.tell(self._pop_current)

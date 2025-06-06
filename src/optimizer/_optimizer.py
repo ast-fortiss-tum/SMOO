@@ -1,5 +1,6 @@
+import logging
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, Optional, Type, Union
+from typing import Any, Iterable, Optional, Type
 
 import numpy as np
 from numpy.typing import NDArray
@@ -45,6 +46,7 @@ class Optimizer(ABC):
         :param fitness: The fitness to assign.
         :param data: Additional data for the candidates.
         """
+        logging.info(f"Assigning fitness to {self.__class__.__name__}")
         # Format fitness into tuple if it is list or singular item.
         fitness = tuple(fitness)
 
@@ -55,10 +57,10 @@ class Optimizer(ABC):
         self._fitness = fitness
 
         """Since we can have an arbitrary amount of metrics we extract best candidates using a pareto frontier."""
-        new_metrics = np.asarray(
+        new_metrics = np.ascontiguousarray(
             fitness
         ).T  # Metrics are rows, instances are columns -> we transpose.
-        old_metrics = np.asarray([cand.fitness for cand in self._best_candidates])
+        old_metrics = np.ascontiguousarray([cand.fitness for cand in self._best_candidates])
         metrics = np.vstack((new_metrics, old_metrics))
 
         new_data: list[Any] = [None] * new_metrics.shape[0] if data is None else list(zip(*data))

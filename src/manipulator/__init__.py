@@ -1,7 +1,6 @@
 """A package for latent space manipulators and auxiliary elements."""
 
-
-from ._manipulator import Manipulator
+from ._manipulator import Manipulator  # isort: skip
 from ._diffusion_manipulator import (
     DiffusionCandidate,
     DiffusionCandidateList,
