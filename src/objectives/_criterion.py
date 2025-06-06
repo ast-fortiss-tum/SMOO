@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -48,3 +49,10 @@ class Criterion(ABC):
         super().__init_subclass__(**kwargs)
         if "evaluate" in cls.__dict__:
             cls.evaluate = criteria_kwargs(cls.evaluate)
+        orig_eval = cls.evaluate
+
+        def wrapped_evaluate(self, **kwargs):
+            logging.info(f"Calculating fitness with {self._name}...")
+            return orig_eval(self, **kwargs)
+
+        cls.evaluate = wrapped_evaluate

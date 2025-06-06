@@ -127,7 +127,7 @@ class SMOO(ABC):
         :param x: The image to be predicted.
         :returns: The predicted labels.
         """
-        logging.info("Feeding Testcases to SUT.")
+        logging.info(f"Feeding Testcases to {self._sut.__class__.__name__}.")
         y_hat = self._sut.process_input(x)
         # TODO: restrict classes is too specific maybe refractor.
         return y_hat if self._restrict_classes is None else y_hat[:, self._restrict_classes]
