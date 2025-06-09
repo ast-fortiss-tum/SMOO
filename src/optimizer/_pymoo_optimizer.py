@@ -21,6 +21,7 @@ class PymooOptimizer(Optimizer):
     _problem: Problem
     _pop_current: Population
     _bounds: tuple[int, int]
+    _shape: tuple[int, ...]
 
     def __init__(
         self,
@@ -39,29 +40,14 @@ class PymooOptimizer(Optimizer):
         :param num_objectives: The number of objectives the learner can handle.
         :param solution_shape: The shape of the solution arrays.
         """
-        # TODO: shared attributes in super init
+        """Initialize Constants."""
         self._pymoo_algo = algorithm(**algo_params, save_history=True)
-
-        self._n_var = int(np.prod(solution_shape))
-        self._shape = solution_shape
-
-        self._bounds = lb, ub = bounds
-        self._problem = Problem(n_var=self._n_var, n_obj=num_objectives, xl=lb, xu=ub, vtype=float)
-        self._pymoo_algo.setup(self._problem, termination=NoTermination())
-
-        self._pop_current = self._pymoo_algo.ask()
-        self._x_current = self._normalize_to_bounds(self._pop_current.get("X"))
-
-        self._best_candidates = [
-            OptimizerCandidate(
-                solution=np.random.uniform(high=ub, low=lb, size=self._n_var),
-                fitness=[np.inf] * num_objectives,
-            )
-        ]
-        self._previous_best = self._best_candidates.copy()
-
         self._optimizer_type = type(self._pymoo_algo)
+        self._bounds = bounds
         self._num_objectives = num_objectives
+
+        """Initialize optimization problem and initial solutions."""
+        self.update_problem(solution_shape)
 
     def new_population(self) -> None:
         """
@@ -82,3 +68,38 @@ class PymooOptimizer(Optimizer):
         :return: The population as array of smx indices and smx weights.
         """
         return self._x_current.reshape((self._x_current.shape[0], *self._shape))
+
+    def update_problem(self, solution_shape: tuple[int, ...]) -> None:
+        """
+        Change problem of optimization.
+
+        :param solution_shape: The new solution shape.
+        """
+        lb, ub = self._bounds
+        self._shape = solution_shape
+        self._n_var = int(np.prod(solution_shape))
+
+        self._problem = Problem(
+            n_var=self._n_var, n_obj=self._num_objectives, xl=lb, xu=ub, vtype=float
+        )
+        self._pymoo_algo.setup(self._problem, termination=NoTermination())
+
+        self._pop_current = self._pymoo_algo.ask()
+        self._x_current = self._normalize_to_bounds(self._pop_current.get("X"))
+
+        self._best_candidates = [
+            OptimizerCandidate(
+                solution=np.random.uniform(high=ub, low=lb, size=self._n_var),
+                fitness=[np.inf] * self._num_objectives,
+            )
+        ]
+        self._previous_best = self._best_candidates.copy()
+
+    @property
+    def best_solutions_reshaped(self) -> list[NDArray]:
+        """
+        Get the best solutions in correct shape.
+
+        :return: The solutions.
+        """
+        return [c.solution.reshape(self._shape) for c in self._best_candidates]

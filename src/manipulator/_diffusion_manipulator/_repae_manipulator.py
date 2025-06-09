@@ -43,6 +43,7 @@ class REPAEManipulator(Manipulator):
         num_classes: int = 1000,
         batch_size: int = 0,
         manipulation_strategy: str = "base",
+        device: Union[torch.device, None] = None,
     ) -> None:
         """
         Initialize the manipulator based on REPA-E diffusion models.
@@ -55,9 +56,10 @@ class REPAEManipulator(Manipulator):
         :param num_classes: Number of classes in the dataset.
         :param batch_size: Batch size to use for generation of samples (0 means all elements get taken).
         :param manipulation_strategy: Manipulation strategy to use.
+        :param device: CUDA device to use if available.
         :raises ValueError: If manipulation_strategy is not supported.
         """
-        self._prepare_cuda()
+        self._prepare_cuda(device)
         self._batch_size = batch_size
         state_dict = torch.load(model_file, weights_only=False)
 
@@ -350,14 +352,14 @@ class REPAEManipulator(Manipulator):
         element = torch.cat(decoded, dim=0)
         return element
 
-    def _prepare_cuda(self) -> None:
+    def _prepare_cuda(self, device: Union[torch.device, None]) -> None:
         """Prepare cuda environment, as done in the REPA-E repository."""
         torch.backends.cuda.matmul.allow_tf32 = True
         assert (
             torch.cuda.is_available()
         ), "Sampling with DDP requires at least one GPU. sample.py supports CPU-only usage"
         torch.set_grad_enabled(False)
-        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     @staticmethod
     def slerp(

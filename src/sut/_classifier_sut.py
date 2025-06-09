@@ -1,3 +1,5 @@
+from typing import Union
+
 import torch
 from torch import Tensor, nn, no_grad
 
@@ -20,6 +22,7 @@ class ClassifierSUT(SUT):
         apply_softmax: bool = False,
         use_mcd: bool = False,
         batch_size: int = 0,
+        device: Union[torch.device, None] = None,
     ) -> None:
         """
         Initialize the classifier SUT.
@@ -28,6 +31,7 @@ class ClassifierSUT(SUT):
         :param apply_softmax: Whether to apply softmax or not.
         :param use_mcd: Whether to use Monte Carlo Dropout or not.
         :param batch_size: The batch size to use for prediction.
+        :param device: The device to use if available.
         """
         self._model = MonteCarloDropoutScaffold(model) if use_mcd else model
         self._model.eval()
@@ -35,6 +39,8 @@ class ClassifierSUT(SUT):
 
         self._apply_softmax = apply_softmax
         self._batch_size = batch_size
+        self._device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.set_device(self._device)
 
     def set_device(self, device: torch.device) -> None:
         """
@@ -51,6 +57,9 @@ class ClassifierSUT(SUT):
         :param inpt: Input tensor.
         :return: Predicted class probabilities on CPU.
         """
+        if inpt.device != self._device:
+            inpt = inpt.to(self._device)
+
         batch_size = max(
             self._batch_size or inpt.size(0), 1
         )  # If batchsize == 0 -> do whole input.
