@@ -12,4 +12,4 @@ class ExperimentConfig:
     classes: list[int]  # The classes in the experiment.
     save_to: Optional[str] = field(
         default=None
-    )  # The name of the dataframe to save to, if None dont save.
+    )  # The name of the dataframe to save to, if None don`t save.

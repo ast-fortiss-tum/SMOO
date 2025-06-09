@@ -43,5 +43,6 @@ PYMOO_AGE_MOEA_DEFAULT_PARAMS = {
     "algorithm": AGEMOEA2,
     "algo_params": {
         "sampling": LHS(),
+        "pop_size": 100,  # This is default in pymoo.
     },
 }
