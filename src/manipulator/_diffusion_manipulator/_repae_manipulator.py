@@ -1,9 +1,10 @@
 import gc
 import logging
-from typing import Callable, Union
+from typing import Callable, Union, Optional
 
 import torch
 from torch import Tensor, nn
+from typeguard import origin_type_checkers
 
 from ._diffusion_candidate import DiffusionCandidateList
 from .repae.models.autoencoder import vae_models
@@ -26,6 +27,8 @@ class REPAEManipulator(Manipulator):
     _in_channels: int
     _latents_scale: Tensor
     _latents_bias: Tensor
+    _epsilon: float = 1e-6  # Precision constant
+    _interpolation_strategy: str
 
     """Auxiliary lambdas for easy callings."""
     _embed_y: Callable[[list[Tensor]], Tensor]
@@ -42,7 +45,8 @@ class REPAEManipulator(Manipulator):
         image_resolution: int = 256,
         num_classes: int = 1000,
         batch_size: int = 0,
-        manipulation_strategy: str = "base",
+        manipulation_strategy: str = "new",
+        interpolation_strategy: str = "linear",
         device: Union[torch.device, None] = None,
     ) -> None:
         """
@@ -56,6 +60,7 @@ class REPAEManipulator(Manipulator):
         :param num_classes: Number of classes in the dataset.
         :param batch_size: Batch size to use for generation of samples (0 means all elements get taken).
         :param manipulation_strategy: Manipulation strategy to use.
+        :param interpolation_strategy: Interpolation strategy to use.
         :param device: CUDA device to use if available.
         :raises ValueError: If manipulation_strategy is not supported.
         """
@@ -118,6 +123,7 @@ class REPAEManipulator(Manipulator):
             torch.tensor(y, device=self._device), self._model.training
         ).detach()
 
+        self._interpolation_strategy = interpolation_strategy
         if manipulation_strategy == "base":
             self._manip_function = self._manip_aggregate_base
         elif manipulation_strategy == "new":
@@ -141,18 +147,39 @@ class REPAEManipulator(Manipulator):
         :param return_manipulation_history: Whether to return a candidate representing the manipulation history.
         :returns: The resulting diffusion result.
         """
+        weights_x = weights_x.to(self._device)
+        weights_y = weights_y.to(self._device)
+
         logging.info(f"Manipulating {len(candidates)} candidates.")
-        n_steps = len(candidates[0].xt) - 1
-        t_steps = torch.linspace(1, 0, n_steps + 1, device=self._device)  # Define step range.
+        t_steps = torch.linspace(
+            1, 0, len(candidates[0].xt), device=self._device
+        )  # Define step range.
+
+        if weights_x.ndim > 1:  # Check if we have a batch dimension in the weights.
+            batch_size = weights_x.shape[0]
+        else:  # If not make a singleton batch dimension for compatability.
+            batch_size = 1
+            weights_x = weights_x.unsqueeze(0)
+            weights_y = weights_y.unsqueeze(0)
+
+        """Convert into batches."""
+        xt_target = self._batch_expand(candidates.target[0].xt, batch_size)
+        xt_origin = self._batch_expand(candidates.origin[0].xt, batch_size)
+
+        y_target = self._batch_expand(candidates.target[0].class_embedding, batch_size)
+        y_origin = self._batch_expand(candidates.origin[0].class_embedding, batch_size)
 
         """The manipulation process."""
         manip_cand = self._manip_function(
             t_steps=t_steps,
-            candidates=candidates,
-            xt_weights=weights_x,
-            y_weights=weights_y,
+            origin=(xt_origin, y_origin),
+            target=(xt_target, y_target),
+            weights_x=weights_x,
+            weights_y=weights_y,
         )
 
+        del xt_target, xt_origin, y_origin, y_target
+        torch.cuda.empty_cache()
         """Return a candidate with the manipulation history if wanted."""
         return (
             (manip_cand.xts[:, -1, ...], manip_cand)
@@ -164,84 +191,69 @@ class REPAEManipulator(Manipulator):
         self,
         *,
         t_steps: Tensor,
-        candidates: DiffusionCandidateList,
-        xt_weights: Tensor,
-        y_weights: Tensor,
+        origin: tuple[Tensor, Tensor],
+        target: tuple[Tensor, Tensor],
+        weights_x: Tensor,
+        weights_y: Tensor,
     ) -> DiffusionCandidateList:
         """
         Manipulate latent vector of diffusion processes and aggregate them on the new candidate.
 
         :param t_steps: Time steps to manipulate.
-        :param candidates: Candidates to manipulate with.
-        :param xt_weights: Weights to manipulate diffusion process.
-        :param y_weights: Weights to manipulate class embeddings with.
+        :param origin: Tuple of origin diffusion process and embedding.
+        :param target: Tuple of target diffusion process and embedding.
+        :param weights_x: Weights to manipulate diffusion process.
+        :param weights_y: Weights to manipulate class embeddings.
         :returns: The resulting diffusion candidate.
         """
-        assert (
-            xt_weights.ndim == y_weights.ndim == 2
-        ), "ERROR: For now this strategy does not support batch wise manipulation"
-        # TODO: make this batch compatible
+        xt_origin, y_origin = origin
+        xt_target, y_target = target
 
-        xt_template, y_template = candidates[0].xt, candidates[0].class_embedding
-        weighted_class_embeddings = candidates.class_embeddings * y_weights[..., None]  # N x D x Y
-        y_manip = torch.sum(
-            weighted_class_embeddings, dim=0, keepdim=True
-        ).float()  # N x D x Y -> 1 x D x Y
+        y_manip = self.interpolate(y_origin, y_target, weights_y, dim=(1,)).float()
+        xt_template = torch.zeros_like(xt_origin)
         for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
-            # Here we manipulate the diffusion steps.
-            weighted_candidates = (
-                candidates.xts[:, i, ...] * xt_weights[:, i][:, None, None, None]
-            )  # N x X
-            x_manip = torch.sum(weighted_candidates, dim=0, keepdim=True).float()  # N x X -> 1 x X
-            x_manip = (xt_template[i] + x_manip) / 2
-
+            x_manip = self.interpolate(
+                xt_origin[:, i, ...], xt_target[:, i, ...], weights_x[:, i], dim=(1,)
+            ).float()
+            x_manip = (xt_template[:, i, ...] + x_manip) / 2
             x_cur = self._sample(t=t_cur, x=x_manip, y=y_manip[:, i, ...], step=t_next - t_cur)
-
-            # Log progress.
-            y_template = y_template.clone()
-            y_template[i] = y_manip[:, i, ...]
-            xt_template = xt_template.clone()
-            xt_template[i + 1] = x_cur
-        return DiffusionCandidateList.from_diffusion_output(xs=xt_template, emb=y_template)
+            xt_template[:, i + 1, ...] = x_cur
+        # Transposing from Batch x DiffSteps x Z -> DiffSteps x Batch x Z
+        diff_candidates = DiffusionCandidateList.from_diffusion_output(
+            xs=xt_template.transpose(0, 1).detach(), emb=y_manip.detach(), separate_candidates=False
+        )
+        return diff_candidates
 
     def _manip_aggregate_base(
         self,
         *,
         t_steps: Tensor,
-        candidates: DiffusionCandidateList,
-        xt_weights: Tensor,
-        y_weights: Tensor,
+        origin: tuple[Tensor, Tensor],
+        target: tuple[Tensor, Tensor],
+        weights_x: Tensor,
+        weights_y: Tensor,
     ) -> DiffusionCandidateList:
         """
         Manipulate latent vector of diffusion processes and aggregate them on the base candidate.
 
         :param t_steps: Time steps to manipulate.
-        :param candidates: Candidates to manipulate with.
-        :param xt_weights: Weights to manipulate diffusion process.
-        :param y_weights: Weights to manipulate class embeddings with.
+        :param origin: Tuple of origin diffusion process and embedding.
+        :param target: Tuple of target diffusion process and embedding.
+        :param weights_x: Weights to manipulate diffusion process.
+        :param weights_y: Weights to manipulate class embeddings.
         :returns: The resulting diffusion candidate.
         """
-        if xt_weights.ndim > 1:  # Check if we have a batch dimension in the weights.
-            batch_size = xt_weights.shape[0]
-        else:  # If not make a singleton batch dimension for compatability.
-            batch_size = 1
-            xt_weights = xt_weights.unsqueeze(0)
-            y_weights = y_weights.unsqueeze(0)
-
-        """Convert into batches."""
-        xt_target = self._batch_expand(candidates.target[0].xt, batch_size)
-        xt_origin = self._batch_expand(candidates.origin[0].xt, batch_size)
-
-        y_target = self._batch_expand(candidates.target[0].class_embedding, batch_size)
-        y_origin = self._batch_expand(candidates.origin[0].class_embedding, batch_size)
+        logging.warning(
+            "Attention: This manipulation is very minimal as it depends on the origin image!"
+        )
+        xt_origin, y_origin = origin
+        xt_target, y_target = target
 
         """Do the manipulations on batches."""
-        y_manip = self.slerp(y_origin, y_target, y_weights, dim=(1,)).float()
-        del y_origin, y_target
-        torch.cuda.empty_cache()
+        y_manip = self.interpolate(y_origin, y_target, weights_y, dim=(1,)).float()
         for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
-            x_manip = self.slerp(
-                xt_origin[:, i, ...], xt_target[:, i, ...], xt_weights[:, i], dim=(1,)
+            x_manip = self.interpolate(
+                xt_origin[:, i, ...], xt_target[:, i, ...], weights_x[:, i], dim=(1,)
             ).float()
             x_cur = self._sample(t=t_cur, x=x_manip, y=y_manip[:, i, ...], step=t_next - t_cur)
             xt_target[:, i + 1, ...] = x_cur
@@ -250,8 +262,6 @@ class REPAEManipulator(Manipulator):
         diff_candidates = DiffusionCandidateList.from_diffusion_output(
             xs=xt_target.transpose(0, 1).detach(), emb=y_manip.detach(), separate_candidates=False
         )
-        del xt_target, xt_origin, x_cur, x_manip
-        torch.cuda.empty_cache()
         return diff_candidates
 
     @staticmethod
@@ -362,34 +372,69 @@ class REPAEManipulator(Manipulator):
         self._device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     @staticmethod
-    def slerp(
-        p: Tensor, q: Tensor, weight: Tensor, epsilon=1e-6, dim: Union[tuple[int, ...], None] = None
-    ) -> Tensor:
+    def linear(p: Tensor, q: Tensor, weight: Tensor) -> Tensor:
         """
-        Implement spherical linear interpolation for Tensors.
+        Weights for linear interpolation.
 
         :param p: The first tensor.
         :param q: The second tensor.
         :param weight: The weight for the interpolation.
-        :param epsilon: Cutoff value for precision.
-        :param dim: The dimensions to do operations across.
         :return: The interpolated tensor.
         """
-        p_norm = p / torch.linalg.norm(p, dim=dim, keepdim=True).clamp_min(epsilon)
-        q_norm = q / torch.linalg.norm(q, dim=dim, keepdim=True).clamp_min(epsilon)
-        dot = (p_norm * q_norm).sum(dim=dim, keepdim=True).clamp(-1.0 + epsilon, 1.0 - epsilon)
+        wp, wq = 1 - weight, weight
+        return wp * p + wq * q
 
+    def interpolate(
+        self, p: Tensor, q: Tensor, weight: Tensor, dim: Optional[tuple[int, ...]] = None
+    ) -> Tensor:
+        """
+        Implement interpolation for Tensors.
+
+        :param p: The first tensor.
+        :param q: The second tensor.
+        :param weight: The weight for the interpolation.
+        :param dim: The dimensions to do operations across.
+        :return: The interpolated tensor.
+        :raises: ValueError if interpolation strategy is not known.
+        """
         if weight.ndim == 0:
             weight = weight.view(1)
         for _ in range(p.ndim - weight.ndim):
             weight = weight.unsqueeze(-1)
 
-        if torch.all(torch.abs(dot) > 1 - (5 * epsilon)):
-            wp, wq = 1 - weight, weight
+        if self._interpolation_strategy == "linear":
+            result = self.linear(p, q, weight)
+        elif self._interpolation_strategy == "slerp":
+            result = self.slerp(p, q, weight, dim)
         else:
-            omega = torch.arccos(dot)
-            sin_omega = torch.sin(omega).clamp_min(epsilon)
-            omega_w = omega * weight
-            wp = torch.sin(omega - omega_w) / sin_omega
-            wq = torch.sin(omega_w) / sin_omega
+            raise ValueError(f"Unknown interpolation strategy {self._interpolation_strategy}")
+        return result
+
+    def slerp(self, p: Tensor, q: Tensor, weight: Tensor, dim: Optional[tuple[int, ...]]) -> Tensor:
+        """
+        Weights for spherical linear interpolation.
+
+        :param p: The first tensor.
+        :param q: The second tensor.
+        :param weight: The weight for the interpolation.
+        :param dim: The dimensions to do operations across.
+        :return: The interpolated tensor.
+        """
+        p_norm = p / torch.linalg.norm(p, dim=dim, keepdim=True).clamp_min(self._epsilon)
+        q_norm = q / torch.linalg.norm(q, dim=dim, keepdim=True).clamp_min(self._epsilon)
+        dot = (
+            (p_norm * q_norm)
+            .sum(dim=dim, keepdim=True)
+            .clamp(-1.0 + self._epsilon, 1.0 - self._epsilon)
+        )
+
+        """To avoid instabilities go to linear interpolation if values are too small."""
+        if torch.all(torch.abs(dot) > 1 - (5 * self._epsilon)):
+            return self.linear(p, q, weight)
+
+        omega = torch.arccos(dot)
+        sin_omega = torch.sin(omega).clamp_min(self._epsilon)
+        omega_w = omega * weight
+        wp = torch.sin(omega - omega_w) / sin_omega
+        wq = torch.sin(omega_w) / sin_omega
         return wp * p + wq * q

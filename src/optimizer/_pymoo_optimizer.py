@@ -23,6 +23,9 @@ class PymooOptimizer(Optimizer):
     _bounds: tuple[int, int]
     _shape: tuple[int, ...]
 
+    _params: dict[str, Any]
+    _algorithm: Type[Algorithm]
+
     def __init__(
         self,
         bounds: tuple[int, int],
@@ -41,13 +44,14 @@ class PymooOptimizer(Optimizer):
         :param solution_shape: The shape of the solution arrays.
         """
         """Initialize Constants."""
-        self._pymoo_algo = algorithm(**algo_params, save_history=True)
-        self._optimizer_type = type(self._pymoo_algo)
+        self._params = algo_params
+        self._algorithm = algorithm
         self._bounds = bounds
         self._num_objectives = num_objectives
 
         """Initialize optimization problem and initial solutions."""
         self.update_problem(solution_shape)
+        self._optimizer_type = type(self._pymoo_algo)
 
     def new_population(self) -> None:
         """
@@ -78,6 +82,7 @@ class PymooOptimizer(Optimizer):
         lb, ub = self._bounds
         self._shape = solution_shape
         self._n_var = int(np.prod(solution_shape))
+        self._pymoo_algo = self._algorithm(**self._params, save_history=True)
 
         self._problem = Problem(
             n_var=self._n_var, n_obj=self._num_objectives, xl=lb, xu=ub, vtype=float

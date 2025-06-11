@@ -115,8 +115,10 @@ class DiffTester(SMOO):
                     solution_cache[:, :, start_idx : start_idx + solution_size] = (
                         self._optimizer.get_x_current()
                     )
-                    xw = torch.as_tensor(solution_cache[:, 0, :], device=self._manipulator._device)
-                    yw = torch.as_tensor(solution_cache[:, 1, :], device=self._manipulator._device)
+
+                    """Here we reverse the tensor as the first diffusion steps would be on the back of the weights."""
+                    sols = torch.as_tensor(solution_cache).flip(-1)
+                    xw, yw = sols[:, 0, ...], sols[:, 1, ...]
                     xs_new = self._manipulator.manipulate(candidates, xw, yw)
 
                     """We predict the label from the mixed images."""
@@ -164,14 +166,10 @@ class DiffTester(SMOO):
             df.to_csv(log_dir + "/data.csv", index=False)
 
             for i, bc in enumerate(self._optimizer.best_candidates):
-                image = bc.data[0]
-                self._save_tensor_as_image(image, log_dir + f"/best_{i}.png")
-                stats[f"best_{i}"] = bc.data[1].tolist()
+                self._save_tensor_as_image(bc.data[0], log_dir + f"/best_{i}.png")
+                stats[f"best_{i}_y_hat"] = bc.data[1].tolist()
                 stats[f"best_{i}_solution"] = solution_cache[i].tolist()  # noqa
-
-                tensor_img = torch.Tensor(image).unsqueeze(0)
-                y_pred = self._sut.process_input(tensor_img)
-                stats[f"best_{i}_y_hat"] = y_pred.squeeze().cpu().tolist()
+                stats[f"best_{i}_fitness"] = list(bc.fitness)
             self._save_tensor_as_image(origin_image, log_dir + "/origin.png")
             self._save_tensor_as_image(target_image, log_dir + "/taget.png")
 

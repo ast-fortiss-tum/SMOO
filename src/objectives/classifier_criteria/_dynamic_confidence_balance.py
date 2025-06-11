@@ -1,6 +1,6 @@
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
-import numpy as np
+import torch
 from torch import Tensor
 
 from ._classifier_criterion import ClassifierCriterion
@@ -22,7 +22,9 @@ class DynamicConfidenceBalance(ClassifierCriterion):
         super().__init__(inverse=inverse)
         self._target_primary = target_primary
 
-    def evaluate(self, *, logits: Tensor, label_targets: list[int], **_: Any) -> float:
+    def evaluate(
+        self, *, logits: Tensor, label_targets: list[int], batch_dim: Optional[int] = None, **_: Any
+    ) -> Union[float, list[float]]:
         """
         Calculate the confidence balance of 2 confidence values.
 
@@ -30,18 +32,28 @@ class DynamicConfidenceBalance(ClassifierCriterion):
 
         :param logits: Logits tensor.
         :param label_targets: Label targets used to determine targets of balance.
+        :param batch_dim: Which dim to use for batchwise operations.
         :param _: Unused kwargs.
         :returns: The value.
         """
-        c1 = label_targets[0]  # The primary class
-        logits = logits.detach().cpu().numpy()
-        yp_arr = logits.copy()
-        y = np.delete(yp_arr, c1)
-        s = logits[c1] + y.max()
-        d = abs(logits[c1] - y.max())
-        if self._target_primary is None:
-            return abs(self._inverse.real - d / s)
-        else:
-            return abs(
-                self._inverse.imag - (y.max() if self._target_primary else logits[c1]) - d / s
-            )
+        origin = label_targets[0]  # The primary class
+        if batch_dim is None:
+            logits = logits.unsqueeze(0)
+        elif batch_dim != 0:
+            logits = logits.transpose(0, batch_dim)
+
+        mask = torch.zeros_like(logits, dtype=torch.bool)
+        mask[:, origin] = True
+        second_term = logits.masked_fill(mask, float("-inf")).max(dim=1).values
+
+        s = logits[:, origin] + second_term
+        d = torch.abs(logits[:, origin] - second_term)
+
+        target = 0
+        if self._target_primary is True:
+            target = second_term
+        elif self._target_primary is False:
+            target = logits[:, origin]
+
+        result = torch.abs(self._inverse.real - target - d / s).tolist()
+        return result[0] if batch_dim is None else result

@@ -33,22 +33,16 @@ class ClassifierSUT(SUT):
         :param batch_size: The batch size to use for prediction.
         :param device: The device to use if available.
         """
+        self._apply_softmax = apply_softmax
+        self._batch_size = batch_size
+        self._device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         self._model = MonteCarloDropoutScaffold(model) if use_mcd else model
         self._model.eval()
         self._softmax = nn.Softmax(dim=-1)
 
-        self._apply_softmax = apply_softmax
-        self._batch_size = batch_size
-        self._device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.set_device(self._device)
-
-    def set_device(self, device: torch.device) -> None:
-        """
-        Set the device which the model is on.
-
-        :param device: The device to use.
-        """
-        self._model.to(device)
+        self._model.to(self._device)
+        self._softmax.to(self._device)
 
     def process_input(self, inpt: Tensor) -> Tensor:
         """
@@ -67,7 +61,6 @@ class ClassifierSUT(SUT):
         chunks = torch.chunk(inpt, n_chunks, dim=0)
 
         assert torch.isfinite(inpt).all(), "input has NaNs/Infs"
-        assert inpt.device == next(self._model.parameters()).device, "input on wrong device"
 
         results = []
         with no_grad():
