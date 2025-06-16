@@ -39,13 +39,13 @@ class AdversarialDistance(ClassifierCriterion):
         """
         Calculate the confidence balance of 2 confidence values.
 
-        This functions assumes input range of [0, 1].
+        This function assumes an input range of [0, 1].
 
         :param logits: Logits tensor.
         :param label_targets: Label targets used to determine targets of balance.
         :param batch_dim: Batch dimension if evaluation is done batch wise.
         :param _: Unused kwargs.
-        :returns: The value.
+        :returns: The value in range [0,1].
         """
         origin, target, *_ = label_targets
 
@@ -64,8 +64,8 @@ class AdversarialDistance(ClassifierCriterion):
         partial = (-1) ** (2 - self._inverse.real) * (
             logits[:, origin] - second_term
         ) + self._inverse.real
+        partial = (partial + 1) / 2
         if self._exp_decay_lambda is not None:
-            partial = (partial + 1) / 2
             partial = torch.exp(-self._exp_decay_lambda * partial)
         results = partial.tolist()
         return partial[0] if batch_dim is None else results

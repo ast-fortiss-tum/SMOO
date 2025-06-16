@@ -39,6 +39,7 @@ class DiffTester(SMOO):
         optimizer: Optimizer,
         objectives: list[Criterion],
         config: ExperimentConfig,
+        solutions_shapes: tuple[int, ...],
         silent_wandb: bool = False,
         restrict_classes: Optional[list[int]] = None,
         use_wandb: bool = True,
@@ -51,6 +52,7 @@ class DiffTester(SMOO):
         :param optimizer: The optimizer object.
         :param objectives: The objectives list.
         :param config: The experiment config.
+        :param solutions_shapes: The solution size for optimization.
         :param silent_wandb: Whether to silence wandb.
         :param restrict_classes: What classes to restrict to.
         :param use_wandb: Whether to use wandb for logging.
@@ -65,6 +67,7 @@ class DiffTester(SMOO):
             use_wandb=use_wandb,
         )
         self._config = config
+        self._solution_shape = solutions_shapes
 
     def test(self) -> None:
         """Start the diffusion based testing."""
@@ -92,13 +95,16 @@ class DiffTester(SMOO):
             candidates = DiffusionCandidateList(source, target)
 
             """Get the default solution shape for manipulation."""
-            desired_solution_shape = self._optimizer.get_x_current().shape
-            solution_cache = np.zeros(desired_solution_shape)
+            solution_cache = np.random.rand(*self._solution_shape)
             """Start population based optimization."""
             all_gen_data, global_start = [], time()
+            start_idx = 0
             for f, solution_size in enumerate(self._config.optimizer_schedule):
                 """Adapt problem to fit solution chunk."""
-                self._optimizer.update_problem(solution_shape=(2, solution_size))
+                self._optimizer.update_problem(
+                    solution_shape=(2, solution_size),
+                    sampling=solution_cache[:, :, start_idx : start_idx + solution_size],
+                )
                 logging.info("=" * 50)
                 logging.info(
                     f"Optimizing solution chunk {f+1}/{len(self._config.optimizer_schedule)}"
@@ -106,7 +112,6 @@ class DiffTester(SMOO):
                 intermediate_generations = self._config.generations // len(
                     self._config.optimizer_schedule
                 )
-                start_idx = 0
                 for i in range(1, intermediate_generations + 1):
                     gen_start = time()
                     logging.info("_" * 50)
@@ -159,6 +164,7 @@ class DiffTester(SMOO):
 
                 solution_cache[:, :, start_idx : start_idx + solution_size] = solutions
                 start_idx += solution_size
+                self._optimizer.reset()  # Should not be needed, just in case
 
             """Save data."""
             stats = {"runtime": time() - global_start, "y_hat": y_hat.cpu().squeeze().tolist()}
@@ -170,8 +176,8 @@ class DiffTester(SMOO):
                 stats[f"best_{i}_y_hat"] = bc.data[1].tolist()
                 stats[f"best_{i}_solution"] = solution_cache[i].tolist()  # noqa
                 stats[f"best_{i}_fitness"] = list(bc.fitness)
-            self._save_tensor_as_image(origin_image, log_dir + "/origin.png")
-            self._save_tensor_as_image(target_image, log_dir + "/taget.png")
+            self._save_tensor_as_image(origin_image, log_dir + f"/origin_{class_id}.png")
+            self._save_tensor_as_image(target_image, log_dir + f"/taget_{second.item()}.png")
 
             with open(f"{log_dir}/stats.json", "w") as f:
                 f.write(json.dumps(stats))

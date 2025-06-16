@@ -33,6 +33,8 @@ class MimicryTester(SMOO):
     """Temporary Variables."""
     _img_rgb: Tensor
 
+    _manipulator: StyleGANManipulator
+
     def __init__(
         self,
         *,
@@ -68,6 +70,7 @@ class MimicryTester(SMOO):
             objectives=objectives,
             silent_wandb=silent_wandb,
             restrict_classes=restrict_classes,
+            use_wandb=True,
         )
 
         self._num_w0 = num_w0

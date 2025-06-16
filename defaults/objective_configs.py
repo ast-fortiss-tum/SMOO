@@ -20,7 +20,7 @@ Note that generally this can be a discrete problem where we check, if misclassif
 But for optimization continuous problems produce better results, therefore we use confidence imbalance.
 """
 DYNAMIC_TARGETED_ADVERSARIAL_TESTING = [
-    AdversarialDistance(),
+    AdversarialDistance(exp_decay_lambda=5.0),
     CFrobeniusDistance(),
 ]
 TARGETED_ADVERSARIAL_TESTING = [

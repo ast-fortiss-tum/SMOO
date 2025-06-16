@@ -1,9 +1,9 @@
 import logging
-from typing import Any, Type
+from typing import Any, Optional, Type
 
 import numpy as np
 from numpy.typing import NDArray
-from pymoo.core.algorithm import Algorithm
+from pymoo.algorithms.base.genetic import GeneticAlgorithm
 from pymoo.core.evaluator import Evaluator
 from pymoo.core.population import Population
 from pymoo.core.problem import Problem
@@ -17,19 +17,19 @@ from .auxiliary_components import OptimizerCandidate
 class PymooOptimizer(Optimizer):
     """A Learner class for easy Pymoo integration"""
 
-    _pymoo_algo: Algorithm
+    _pymoo_algo: GeneticAlgorithm
     _problem: Problem
     _pop_current: Population
     _bounds: tuple[int, int]
     _shape: tuple[int, ...]
 
     _params: dict[str, Any]
-    _algorithm: Type[Algorithm]
+    _algorithm: Type[GeneticAlgorithm]
 
     def __init__(
         self,
         bounds: tuple[int, int],
-        algorithm: Type[Algorithm],
+        algorithm: Type[GeneticAlgorithm],
         algo_params: dict[str, Any],
         num_objectives: int,
         solution_shape: tuple[int, ...],
@@ -73,28 +73,48 @@ class PymooOptimizer(Optimizer):
         """
         return self._x_current.reshape((self._x_current.shape[0], *self._shape))
 
-    def update_problem(self, solution_shape: tuple[int, ...]) -> None:
+    def update_problem(
+        self, solution_shape: tuple[int, ...], sampling: Optional[NDArray] = None
+    ) -> None:
         """
-        Change problem of optimization.
+        Change problem shape of optimization.
 
         :param solution_shape: The new solution shape.
+        :param sampling: An initial solution array if available.
         """
-        lb, ub = self._bounds
+        if sampling is not None:
+            assert np.prod(solution_shape) == np.prod(
+                sampling.shape[1:]
+            ), f"ERROR: sampling shape {sampling.shape[1:]}, does not conform to solution size {solution_shape}."
+            x0 = sampling.reshape(sampling.shape[0], -1)
+            x0 += np.random.normal(loc=0.0, scale=0.025, size=x0.shape)
+            x0 = self._normalize_to_bounds(x0)
+            self._params["sampling"] = x0
+
         self._shape = solution_shape
         self._n_var = int(np.prod(solution_shape))
         self._pymoo_algo = self._algorithm(**self._params, save_history=True)
 
         self._problem = Problem(
-            n_var=self._n_var, n_obj=self._num_objectives, xl=lb, xu=ub, vtype=float
+            n_var=self._n_var,
+            n_obj=self._num_objectives,
+            xl=self._bounds[0],
+            xu=self._bounds[1],
+            vtype=float,
         )
         self._pymoo_algo.setup(self._problem, termination=NoTermination())
+        self.reset()
 
+    def reset(self) -> None:
+        """Resets the optimizer."""
         self._pop_current = self._pymoo_algo.ask()
         self._x_current = self._normalize_to_bounds(self._pop_current.get("X"))
 
         self._best_candidates = [
             OptimizerCandidate(
-                solution=np.random.uniform(high=ub, low=lb, size=self._n_var),
+                solution=np.random.uniform(
+                    high=self._bounds[0], low=self._bounds[1], size=self._n_var
+                ),
                 fitness=[np.inf] * self._num_objectives,
             )
         ]
