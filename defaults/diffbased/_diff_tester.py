@@ -24,7 +24,7 @@ from ._experiment_config import ExperimentConfig
 
 
 class DiffTester(SMOO):
-    """A diffusion based tester."""
+    """A diffusion-based tester."""
 
     _manipulator: REPAEManipulator
     _optimizer: PymooOptimizer
@@ -47,10 +47,10 @@ class DiffTester(SMOO):
         """
         Initialize the Diffusion Tester.
 
-        :param sut: The system under test.
+        :param sut: The system-under-test.
         :param manipulator: The manipulator object.
         :param optimizer: The optimizer object.
-        :param objectives: The objectives list.
+        :param objectives: The objectives used for fitness calculation.
         :param config: The experiment config.
         :param solutions_shapes: The solution size for optimization.
         :param silent_wandb: Whether to silence wandb.
@@ -70,7 +70,7 @@ class DiffTester(SMOO):
         self._solution_shape = solutions_shapes
 
     def test(self) -> None:
-        """Start the diffusion based testing."""
+        """Start the diffusion-based testing."""
         metric_names = [metric.name for metric in self._objectives]
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -164,7 +164,6 @@ class DiffTester(SMOO):
 
                 solution_cache[:, :, start_idx : start_idx + solution_size] = solutions
                 start_idx += solution_size
-                self._optimizer.reset()  # Should not be needed, just in case
 
             """Save data."""
             stats = {"runtime": time() - global_start, "y_hat": y_hat.cpu().squeeze().tolist()}
