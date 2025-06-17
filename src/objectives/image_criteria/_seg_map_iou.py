@@ -54,6 +54,7 @@ class SegMapIoU(ImageCriterion):
         iou = torch.logical_and(c1, c2).sum() / torch.logical_or(c1, c2).sum()
 
         inverted = iou if self._inverse else 1 - iou
+        inverted = inverted.tolist()
         return inverted[0] if batch_dim is None else inverted
 
     @staticmethod

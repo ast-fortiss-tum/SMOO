@@ -59,13 +59,20 @@ class AdversarialDistance(ClassifierCriterion):
         else:
             mask = torch.zeros_like(logits, dtype=torch.bool)
             mask[:, origin] = True
-            second_term = logits.masked_fill(mask, float("-inf")).max(dim=1).values
+            second_term = logits.masked_fill(mask, torch.inf).max(dim=1).values
 
         partial = (-1) ** (2 - self._inverse.real) * (
             logits[:, origin] - second_term
         ) + self._inverse.real
         partial = (partial + 1) / 2
+
         if self._exp_decay_lambda is not None:
+            """
+            Here we apply the exponential decay to balance the effect of the distance measure.
+            For adversarial testing we are not interested in flipping the prediction probabilities, rather approach a failure case.
+            If the decay is linear, this measure can easily overpower the image distance metrics.
+            This would result in perfect misclassifications, but with rather lager image distances.
+            """
             partial = torch.exp(-self._exp_decay_lambda * partial)
         results = partial.tolist()
         return partial[0] if batch_dim is None else results
