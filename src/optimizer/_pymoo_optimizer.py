@@ -63,13 +63,13 @@ class PymooOptimizer(Optimizer):
         self._pymoo_algo.tell(self._pop_current)
 
         self._pop_current = self._pymoo_algo.ask()
-        self._x_current = self._normalize_to_bounds(self._pop_current.get("X"))
+        self._x_current = self._clip_to_bounds(self._pop_current.get("X"))
 
     def get_x_current(self) -> NDArray:
         """
-        Return the current population in specific format.
+        Return the current population in a specific format.
 
-        :return: The population as array of smx indices and smx weights.
+        :return: The currently best genome.
         """
         return self._x_current.reshape((self._x_current.shape[0], *self._shape))
 
@@ -88,7 +88,7 @@ class PymooOptimizer(Optimizer):
             ), f"ERROR: sampling shape {sampling.shape[1:]}, does not conform to solution size {solution_shape}."
             x0 = sampling.reshape(sampling.shape[0], -1)
             x0 += np.random.normal(loc=0.0, scale=0.025, size=x0.shape)
-            x0 = self._normalize_to_bounds(x0)
+            x0 = self._clip_to_bounds(x0)
             self._params["sampling"] = x0
 
         self._shape = solution_shape
@@ -108,7 +108,7 @@ class PymooOptimizer(Optimizer):
     def reset(self) -> None:
         """Resets the optimizer."""
         self._pop_current = self._pymoo_algo.ask()
-        self._x_current = self._normalize_to_bounds(self._pop_current.get("X"))
+        self._x_current = self._clip_to_bounds(self._pop_current.get("X"))
 
         self._best_candidates = [
             OptimizerCandidate(

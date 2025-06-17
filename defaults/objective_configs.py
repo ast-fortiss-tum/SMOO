@@ -3,52 +3,50 @@
 from src.objectives.classifier_criteria import (
     AdversarialDistance,
     DynamicConfidenceBalance,
-    IsMisclassified,
     NaiveConfidenceBalance,
-    UncertaintyThreshold,
 )
-from src.objectives.image_criteria import CFrobeniusDistance
+from src.objectives.image_criteria import MatrixDistance, SegMapIoU
+
+# Seg map -> stay same and misclassify,
+# Spacial failure or classification failure.
+# Yolo bounding box testing?
 
 """
-### ADVERSARIAL TESTING:
-When doing adversarial testing we aim to find inputs that are close to the original, but perturb the classifiers predictions.
+### Adversarial Testing:
+The objective is to find inputs that induce misbehavior in the SUT, while exhibiting minimal changes to the original reference.
 
-Dynamic refers to the ability for a target to change during optimization.
-Targeted refers to the ability to use SUT feedback in order to find specific co-classes used for optimization.
-
-Note that generally this can be a discrete problem where we check, if misclassified. 
-But for optimization continuous problems produce better results, therefore we use confidence imbalance.
+DYNAMIC_ADVERSARIAL_TESTING: Allows for a changing target in the optimization, i.e the adversarial class can change.
+TARGETED_ADVERSARIAL_TESTING: Enforces a fixed target in the optimization, i.e the adversarial class can`t change.
 """
-DYNAMIC_TARGETED_ADVERSARIAL_TESTING = [
+DYNAMIC_ADVERSARIAL_TESTING = [
     AdversarialDistance(exp_decay_lambda=5.0),
-    CFrobeniusDistance(),
+    MatrixDistance(),
 ]
 TARGETED_ADVERSARIAL_TESTING = [
     AdversarialDistance(target_pair=True, exp_decay_lambda=5.0),
-    CFrobeniusDistance(),
+    MatrixDistance(),
 ]
 
 """
-### Boundary TESTING:
-Boundary testing essentially tries to find inputs that confuse the classifier, i.e. where the confidence of 2 or n classes are in a balance.
+### Boundary Testing:
+The objective is to find ambiguous cases, that is inputs for which the SUTs most likely prediction forms an equilibrium between multiple classes.
 
-Note that here we dont care about the distance of images, since the boundary can either be of an adversarial subset in the classifiers desicion-manifold, or it can be a different class set entirely.
+DYNAMIC_BOUNDARY_TESTING: Allows for a changing target in the optimization.
+TARGETED_BOUNDARY_TESTING: Enforces a fixed target in the optimization.
+ADVERSARIAL_BOUNDARY_TESTING: Enforces a fixed target in the optimization in addition to minimizing image distance to the original input.
 """
-DYNAMIC_TARGETED_BOUNDARY_TESTING = [DynamicConfidenceBalance()]
+DYNAMIC_BOUNDARY_TESTING = [DynamicConfidenceBalance()]
 TARGETED_BOUNDARY_TESTING = [NaiveConfidenceBalance()]
-ADVERSARIAL_BOUNDARY_TESTING = [NaiveConfidenceBalance(), CFrobeniusDistance()]
-
-"""
-### DIVERSITY SAMPLING:
-Diversity testing aims to find inputs that are dissimilar to the provided data, but are inferred by the classifer.
-
-Here we want to find inputs that are classified correctly but have a high distance to the initial input.
-"""
-DIVERSITY_SAMPLING = [CFrobeniusDistance(inverse=True), IsMisclassified()]
+ADVERSARIAL_BOUNDARY_TESTING = [NaiveConfidenceBalance(), MatrixDistance()]
 
 
 """
-### Validity Boundary Testing.
-Here we want to find the boundary to the validity domain in the classifier. As this is not formalizable we approximate it here.
+### Experimental objectives:
+A collection of experimental objectives that are less standard.
+
+SPATIAL_CONSISTENT_FAILURE: Aims to maximize IoU, meaning the content structure stays the same, but the class labels change.
 """
-VALIDITY_BOUNDARY_TESTING = [UncertaintyThreshold(0.1, absolute=True), IsMisclassified()]
+SPATIAL_CONSISTENT_FAILURE = [
+    AdversarialDistance(target_pair=True, exp_decay_lambda=5.0),
+    SegMapIoU(gaussian_params=(5, 1.0)),
+]

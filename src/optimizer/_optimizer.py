@@ -139,11 +139,13 @@ class Optimizer(ABC):
         """
         return self._n_var
 
-    def _normalize_to_bounds(self, element: NDArray) -> NDArray:
+    def _clip_to_bounds(self, element: NDArray) -> NDArray:
         """
-        Normalize array to range [0,1].
+        Clip array values to the range of bounds.
 
-        :param element: The array to be normalized.
-        :returns: The normalized array.
+        :param element: The array to be clipped.
+        :returns: The clipped array.
         """
-        return (element - self._bounds[0]) / (self._bounds[1] - self._bounds[0])
+        element = np.maximum(element, self._bounds[0])
+        element = np.minimum(element, self._bounds[1])
+        return element

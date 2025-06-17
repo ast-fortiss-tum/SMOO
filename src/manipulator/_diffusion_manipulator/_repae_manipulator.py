@@ -4,7 +4,6 @@ from typing import Callable, Union, Optional
 
 import torch
 from torch import Tensor, nn
-from typeguard import origin_type_checkers
 
 from ._diffusion_candidate import DiffusionCandidateList
 from .repae.models.autoencoder import vae_models
@@ -281,7 +280,7 @@ class REPAEManipulator(Manipulator):
         x: Tensor,
         y: Tensor,
         step: float,
-        cfg_scale: float = 1.5,
+        cfg_scale: float = 1.5,  # TODO: check other values
         guidance_bounds: tuple[float, float] = (0.0, 1.0),
     ) -> Tensor:
         """
