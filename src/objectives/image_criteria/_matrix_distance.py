@@ -6,10 +6,12 @@ from torch import Tensor
 from ._image_criterion import ImageCriterion
 
 
-class CFrobeniusDistance(ImageCriterion):
-    """Implements a channel-wise Frobenius Distance measure."""
+class MatrixDistance(ImageCriterion):
+    """Implements a channel-wise matrix distance measure."""
 
-    _name: str = "CFrobDistance"
+    _name: str = "MatrixDistance"
+
+    def __init__(self):
 
     @torch.no_grad()
     def evaluate(
