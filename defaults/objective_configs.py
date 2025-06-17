@@ -7,10 +7,6 @@ from src.objectives.classifier_criteria import (
 )
 from src.objectives.image_criteria import MatrixDistance, SegMapIoU
 
-# Seg map -> stay same and misclassify,
-# Spacial failure or classification failure.
-# Yolo bounding box testing?
-
 """
 ### Adversarial Testing:
 The objective is to find inputs that induce misbehavior in the SUT, while exhibiting minimal changes to the original reference.
@@ -50,3 +46,4 @@ SPATIAL_CONSISTENT_FAILURE = [
     AdversarialDistance(target_pair=True, exp_decay_lambda=5.0),
     SegMapIoU(gaussian_params=(5, 1.0)),
 ]
+# TODO: Yolo bounding box testing? Spatial failure or classification failure.
