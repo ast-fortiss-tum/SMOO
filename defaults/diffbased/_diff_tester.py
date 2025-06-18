@@ -4,7 +4,7 @@ import logging
 import os
 from itertools import product
 from time import time
-from typing import Optional, Union
+from typing import Optional, Union, Callable, Any
 
 import numpy as np
 import pandas as pd
@@ -16,7 +16,7 @@ from torch import Tensor
 
 from src import SMOO
 from src.manipulator import DiffusionCandidate, DiffusionCandidateList, REPAEManipulator
-from src.objectives import Criterion
+from src.objectives import CriterionCollection
 from src.optimizer import Optimizer, PymooOptimizer
 from src.sut import ClassifierSUT
 
@@ -37,12 +37,13 @@ class DiffTester(SMOO):
         sut: ClassifierSUT,
         manipulator: REPAEManipulator,
         optimizer: Optimizer,
-        objectives: list[Criterion],
+        objectives: CriterionCollection,
         config: ExperimentConfig,
         solutions_shapes: tuple[int, ...],
         silent_wandb: bool = False,
         restrict_classes: Optional[list[int]] = None,
         use_wandb: bool = True,
+        early_termination: Optional[Callable[[Any], tuple[bool, Any]]] = None,
     ):
         """
         Initialize the Diffusion Tester.
@@ -56,6 +57,7 @@ class DiffTester(SMOO):
         :param silent_wandb: Whether to silence wandb.
         :param restrict_classes: What classes to restrict to.
         :param use_wandb: Whether to use wandb for logging.
+        :param early_termination: An optional early termination function.
         """
         super().__init__(
             sut=sut,
@@ -68,21 +70,15 @@ class DiffTester(SMOO):
         )
         self._config = config
         self._solution_shape = solutions_shapes
+        self._early_termination = early_termination or (lambda _: (False, None))
 
     def test(self) -> None:
         """Start the diffusion-based testing."""
-        metric_names = [metric.name for metric in self._objectives]
-
         script_dir = os.path.dirname(os.path.abspath(__file__))
         for class_id, sample_idx in product(
             self._config.classes, range(self._config.samples_per_class)
         ):
             logging.info(f"Test class {class_id}, sample idx {sample_idx}.")
-
-            log_dir = os.path.join(
-                script_dir, f"runs/class_{class_id}_{self._config.save_as}_{time()}"
-            )
-            os.makedirs(log_dir, exist_ok=True)
 
             """Get initial origin and target candidates."""
             source, y_hat, origin_image = self._find_valid_candidate(class_id, is_origin=True)
@@ -94,11 +90,16 @@ class DiffTester(SMOO):
             target, _, target_image = self._find_valid_candidate(second, is_origin=False)
             candidates = DiffusionCandidateList(source, target)
 
-            """Get the default solution shape for manipulation."""
-            solution_cache = np.random.rand(*self._solution_shape)
+            """Set variables."""
+            budget_used = 0  # Computational budget measured by SUT evals.
+            start_idx = 0  # The start index for solution chunks.
+            terminate = False  # Whether early termination was triggered.
+            term_selection = None  # Which outputs triggered the early termination.
+            solution_cache = np.random.rand(*self._solution_shape) # Get the default solution shape for manipulation.
+            all_gen_data = []  # Stores generation information (fitness values of individuals per generation).
+            global_start = time()  # Stores the start time of the current experiment.
+
             """Start population based optimization."""
-            all_gen_data, global_start = [], time()
-            start_idx = 0
             for f, solution_size in enumerate(self._config.optimizer_schedule):
                 """Adapt problem to fit solution chunk."""
                 self._optimizer.update_problem(
@@ -129,52 +130,77 @@ class DiffTester(SMOO):
                     """We predict the label from the mixed images."""
                     xs = self._manipulator.get_image(xs_new)
                     predictions: Tensor = self._process(xs)
+                    budget_used += xs.shape[0]  # add budget based on how many images are evaluated.
 
-                    fitness = [
-                        c.evaluate(
-                            images=[origin_batch, xs],
-                            logits=predictions,
-                            label_targets=[class_id, int(second.item())],
-                            batch_dim=0,
-                        )
-                        for c in self._objectives
-                    ]
+                    self._objectives.evaluate_all(
+                        {
+                            "images": [origin_batch, xs],
+                            "logits": predictions,
+                            "label_targets": [class_id, int(second.item())],
+                            "solution_archive": [],
+                            "batch_dim": 0,
+                        }
+                    )
+                    results = self._objectives.get_all_results()
 
                     row = {
                         "generation": i,
-                        **{metric: vals for metric, vals in zip(metric_names, fitness)},
+                        **{metric: vals for metric, vals in results.items()},
                     }
                     all_gen_data.append(row)
                     xsc = np.ascontiguousarray(xs.cpu())
-                    self._optimizer.assign_fitness(fitness, xsc, predictions.numpy())
+                    self._optimizer.assign_fitness(
+                        [np.asarray(f) for f in results.values()],
+                        xsc,
+                        predictions.numpy()
+                    )
                     self._optimizer.new_population()
 
+                    terminate, term_selection = self._early_termination(results)
+                    logging.info(f"Generation {i} done in {time() - gen_start}.")
+                    if terminate:
+                        break
                     del xs, predictions, xw, yw, xsc, xs_new
                     self._cleanup()  # Free up some memory
-                    logging.info(f"Generation {i} done in {time() - gen_start}.")
 
                 """Assign best candidates uniformly to the cached solution."""
                 stack = np.stack(self._optimizer.best_solutions_reshaped, axis=0)
-                batch_size, num_cand = self._optimizer.get_x_current().shape[0], len(
-                    self._optimizer.best_candidates
-                )
-                solutions = np.tile(stack, ((batch_size + num_cand - 1) // num_cand, 1, 1))[
-                    :batch_size
-                ]  # N x 2 x 50 -> B x 2 x 50
+                batch_size = self._optimizer.get_x_current().shape[0]
+                num_cand = len(self._optimizer.best_candidates)
+                # N x 2 x 50 -> B x 2 x 50
+                solutions = np.tile(stack, ((batch_size + num_cand - 1) // num_cand, 1, 1))[:batch_size]
 
                 solution_cache[:, :, start_idx : start_idx + solution_size] = solutions
                 start_idx += solution_size
+                if terminate:
+                    break
 
             """Save data."""
+            log_dir = os.path.join(
+                script_dir, f"runs/class_{class_id}_{self._config.save_as}_{time()}"
+            )
+            os.makedirs(log_dir, exist_ok=True)
+
             stats = {"runtime": time() - global_start, "y_hat": y_hat.cpu().squeeze().tolist()}
             df = pd.DataFrame(all_gen_data)
             df.to_csv(log_dir + "/data.csv", index=False)
 
-            for i, bc in enumerate(self._optimizer.best_candidates):
-                self._save_tensor_as_image(bc.data[0], log_dir + f"/best_{i}.png")
-                stats[f"best_{i}_y_hat"] = bc.data[1].tolist()
-                stats[f"best_{i}_solution"] = solution_cache[i].tolist()  # noqa
-                stats[f"best_{i}_fitness"] = list(bc.fitness)
+            if term_selection is not None:
+                """Here we save all elements that satisfy a termination condition."""
+                for ind in term_selection:
+                    self._save_tensor_as_image(xs[ind], log_dir + f"/best_{ind}.png")
+                    stats[f"best_{ind}_y_hat"] = predictions[ind].tolist()
+                    stats[f"best_{ind}_solution"] = sols[ind].tolist()
+                    stats[f"best_{ind}_fitness"] = [r[ind] for r in results.values()]
+                stats["budget_used"] = budget_used
+            else:
+                """If no termination condition was met, we save the best candidates."""
+                for i, bc in enumerate(self._optimizer.best_candidates):
+                    self._save_tensor_as_image(bc.data[0], log_dir + f"/best_{i}.png")
+                    stats[f"best_{i}_y_hat"] = bc.data[1].tolist()
+                    stats[f"best_{i}_solution"] = solution_cache[i].tolist()  # noqa
+                    stats[f"best_{i}_fitness"] = list(bc.fitness)
+            """Here we save the standard images for easy comparison."""
             self._save_tensor_as_image(origin_image, log_dir + f"/origin_{class_id}.png")
             self._save_tensor_as_image(target_image, log_dir + f"/taget_{second.item()}.png")
 

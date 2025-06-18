@@ -6,6 +6,7 @@ from src.objectives.classifier_criteria import (
     NaiveConfidenceBalance,
 )
 from src.objectives.image_criteria import MatrixDistance, SegMapIoU
+from src.objectives.auxiliary_criteria import ArchiveSparsity
 
 """
 ### Adversarial Testing:
@@ -34,6 +35,17 @@ ADVERSARIAL_BOUNDARY_TESTING: Enforces a fixed target in the optimization in add
 DYNAMIC_BOUNDARY_TESTING = [DynamicConfidenceBalance()]
 TARGETED_BOUNDARY_TESTING = [NaiveConfidenceBalance()]
 ADVERSARIAL_BOUNDARY_TESTING = [NaiveConfidenceBalance(), MatrixDistance()]
+
+
+"""
+### Generic Testing
+Here the objective is to find inputs that induce misbehavior in the SUT, no other behavioral restrictions are applied.
+
+MARYAM: Taken from the paper: "Benchmarking Generative AI Models for Deep Learning Test Input Generation", which misclassification severity.
+DEEP_JANUS: Taken from the paper: "Model-Based Exploration of the Frontier of Behaviours for Deep Learning System Testing". Adapted to work for generic testing, rather than frontier pair discovery.
+"""
+MARYAM = [AdversarialDistance()]
+DEEP_JANUS = [ArchiveSparsity(metric=MatrixDistance()), AdversarialDistance()]
 
 
 """

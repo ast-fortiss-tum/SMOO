@@ -1,13 +1,13 @@
 import datetime
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import wandb
 from torch import Tensor
 
 from .manipulator import Manipulator
-from .objectives import Criterion
+from .objectives import Criterion, CriterionCollection
 from .optimizer import Optimizer
 from .sut import SUT
 
@@ -19,7 +19,7 @@ class SMOO(ABC):
     _sut: SUT
     _manipulator: Manipulator
     _optimizer: Optimizer
-    _objectives: list[Criterion]
+    _objectives: Union[list[Criterion], CriterionCollection]
 
     _restrict_classes: Optional[list[int]]
     _silent: bool
@@ -30,7 +30,7 @@ class SMOO(ABC):
         sut: SUT,
         manipulator: Manipulator,
         optimizer: Optimizer,
-        objectives: list[Criterion],
+        objectives: Union[list[Criterion], CriterionCollection],
         silent_wandb: bool,
         restrict_classes: Optional[list[int]],
         use_wandb: bool,
