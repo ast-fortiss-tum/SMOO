@@ -384,7 +384,11 @@ class REPAEManipulator(Manipulator):
         """
         logging.info("Sampling Images from denoised Latents.")
 
-        chunks = (z.size(0) + self._batch_size - 1) // self._batch_size if self._batch_size > 0 else z.size(0)
+        chunks = (
+            (z.size(0) + self._batch_size - 1) // self._batch_size
+            if self._batch_size > 0
+            else z.size(0)
+        )
         decoded = []
         for z_chunk in torch.chunk(z, chunks, dim=0):
             with torch.no_grad():

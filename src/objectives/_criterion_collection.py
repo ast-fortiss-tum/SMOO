@@ -1,5 +1,7 @@
+from typing import Any, Type, Union
+
 from ._criterion import Criterion
-from typing import Any, Union, Type
+
 
 class CriterionCollection:
     """A collection of criteria that simplifies calling and evaluation in addition to having better organization of results."""
@@ -25,7 +27,9 @@ class CriterionCollection:
         for criterion in self._criteria:
             self._results[type(criterion)] = criterion.evaluate(**iargs)
 
-    def get_results_of(self, criterion: Union[Type[Criterion], Criterion]) -> Union[float, list[float]]:
+    def get_results_of(
+        self, criterion: Union[Type[Criterion], Criterion]
+    ) -> Union[float, list[float]]:
         """
         Get results of a specific criterion type if available.
 
@@ -42,3 +46,12 @@ class CriterionCollection:
         :returns: The results dictionary, with keys as criterion names.
         """
         return {c.name: self.get_results_of(c) for c in self._criteria}
+
+    @property
+    def names(self) -> list[str]:
+        """
+        Get the names of the criteria in the collection.
+
+        :returns: The names of the criteria.
+        """
+        return [c.name for c in self._criteria]

@@ -87,7 +87,6 @@ class PymooOptimizer(Optimizer):
                 sampling.shape[1:]
             ), f"ERROR: sampling shape {sampling.shape[1:]}, does not conform to solution size {solution_shape}."
             x0 = sampling.reshape(sampling.shape[0], -1)
-            x0 += np.random.normal(loc=0.0, scale=0.025, size=x0.shape)
             x0 = self._clip_to_bounds(x0)
             self._params["sampling"] = x0
 

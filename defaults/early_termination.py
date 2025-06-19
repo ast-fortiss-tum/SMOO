@@ -1,12 +1,15 @@
 from typing import Callable, Optional
-from src.objectives import Criterion
-from numpy.typing import NDArray
+
 import numpy as np
+from numpy.typing import NDArray
+
+from src.objectives import Criterion
+
 
 def get_early_termination(
-        target_criterion: Criterion,
-        target_condition: Callable[[NDArray], NDArray],
-        fulfill: str = "any",
+    target_criterion: Criterion,
+    target_condition: Callable[[NDArray], NDArray],
+    fulfill: str = "any",
 ) -> Callable[[dict], tuple[bool, Optional[NDArray]]]:
     """
     Get an early termination condition from provided parameters.
@@ -15,7 +18,7 @@ def get_early_termination(
     :param target_condition: The condition to evaluate the results with.
     :param fulfill: How the condition should be fulfilled. Either "any" or "all" (default: any).
     :return: The callable function.
-    :raises: ValueError if fulfill is not "any" or "all".
+    :raises ValueError: if fulfill is not "any" or "all".
     """
     if fulfill == "any":
         ff = np.any
@@ -34,9 +37,10 @@ def get_early_termination(
         values = results.get(target_criterion.name)
         if values is None:
             return False, None
-        if not isinstance(values, NDArray):
+        if not isinstance(values, np.ndarray):
             values = np.asarray(values)
 
         cond = target_condition(values)
         return bool(ff(cond)), cond
+
     return condition_function

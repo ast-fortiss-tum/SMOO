@@ -1,12 +1,12 @@
 """A collection of metric selections for specific objectives."""
 
+from src.objectives.auxiliary_criteria import ArchiveSparsity
 from src.objectives.classifier_criteria import (
     AdversarialDistance,
     DynamicConfidenceBalance,
     NaiveConfidenceBalance,
 )
 from src.objectives.image_criteria import MatrixDistance, SegMapIoU
-from src.objectives.auxiliary_criteria import ArchiveSparsity
 
 """
 ### Adversarial Testing:
