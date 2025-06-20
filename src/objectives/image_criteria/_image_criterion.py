@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 from numpy.typing import NDArray
@@ -11,24 +11,46 @@ from .._criterion import Criterion
 class ImageCriterion(Criterion):
     """A criterion that only considers images for evaluation."""
 
+    def __init__(self, inverse: bool = False, allow_batched=False) -> None:
+
+        super().__init__(inverse, allow_batched)
+
+        if self._allow_batched:
+            eval_func = self.evaluate
+
+            def batched_evaluate(
+                _, *, images: list[Tensor], batch_dim: Optional[int] = None, **kwargs: Any
+            ) -> Union[float, list[float]]:
+                """
+                A wrapper to the classifier criterion evaluate function.
+
+                :param images: The images to evaluate the criterion on.
+                :param batch_dim: The batch dimension.
+                :param kwargs: The KW-Args parsed.
+                :returns: The value(s).
+                """
+                if batch_dim is None:
+                    images = [i.unsqueeze(0) for i in images]
+                elif batch_dim != 1:
+                    images = [i.transpose(0, batch_dim) for i in images]
+                results = eval_func(images=images, **kwargs)
+                return results[0] if batch_dim is None else results
+
+            self.evaluate = batched_evaluate.__get__(self, self.__class__)
+
     @abstractmethod
-    def evaluate(
-        self, *, images: list[Tensor], batch_dim: Union[int, None], **kwargs: Any
-    ) -> float:
+    def evaluate(self, *, images: list[Tensor], **kwargs: Any) -> Union[float, list[float]]:
         """
         Evaluate the criterion in question.
 
         :param images: The images to evaluate the criterion on.
-        :param batch_dim: The batch dimension.
         :param kwargs: The KW-Args parsed.
         :returns: The value(s).
         """
         ...
 
     @staticmethod
-    def _prepare_tensor(
-        tensor: Union[Tensor, NDArray], batch_dim: Union[int, None] = None
-    ) -> NDArray:
+    def _prepare_tensor(tensor: Union[Tensor, NDArray], batch_dim: Optional[int] = None) -> NDArray:
         """
         Prepare torch Tensor into numpy NDArray with correct dimension order.
 
@@ -48,14 +70,14 @@ class ImageCriterion(Criterion):
         return ndarray[0] if batch_dim is None else ndarray
 
     def prepare_images(
-        self, images: list[Tensor], batch_dim: Union[int, None]
+        self, images: list[Tensor], batch_dim: Optional[int] = None
     ) -> tuple[NDArray, NDArray]:
         """
         Prepare image pairs for evaluation and assert that there are two images.
 
         :param images: The images to prepare.
         :param batch_dim: The batch dimension.
-        :returns: The images prepared in form of a tuple.
+        :returns: The prepared images as a tuple.
         """
         assert len(images) == 2, f"ERROR, {self._name} requires 2 images, found {len(images)}"
         images = [self._prepare_tensor(i, batch_dim=batch_dim) for i in images]

@@ -1,4 +1,4 @@
-from typing import Any, Union
+from typing import Any
 
 import torch
 from torch import Tensor
@@ -22,20 +22,13 @@ class AdversarialDistance(ClassifierCriterion):
         :param exp_decay_lambda: Factor for exponential decay f(x) = e^(-lambda*x).
         :raises NotImplementedError: If inverse of funcion is required.
         """
-        super().__init__(inverse=inverse)
+        super().__init__(inverse=inverse, allow_batched=True)
         self._target_pair = target_pair
         self._exp_decay_lambda = exp_decay_lambda
         if self._inverse:
             raise NotImplementedError("Inverse does not function properly yet.")
 
-    def evaluate(
-        self,
-        *,
-        logits: Tensor,
-        label_targets: list[int],
-        batch_dim: Union[int, None] = None,
-        **_: Any
-    ) -> Union[float, list[float]]:
+    def evaluate(self, *, logits: Tensor, label_targets: list[int], **_: Any) -> list[float]:
         """
         Calculate the confidence balance of 2 confidence values.
 
@@ -43,16 +36,10 @@ class AdversarialDistance(ClassifierCriterion):
 
         :param logits: Logits tensor.
         :param label_targets: Label targets used to determine targets of balance.
-        :param batch_dim: Batch dimension if evaluation is done batch wise.
         :param _: Unused kwargs.
         :returns: The value in range [0,1].
         """
         origin, target, *_ = label_targets
-
-        if batch_dim is None:
-            logits = logits.unsqueeze(0)
-        elif batch_dim != 0:
-            logits = logits.transpose(0, batch_dim)
 
         if self._target_pair:
             second_term = logits[target].item()
@@ -75,4 +62,4 @@ class AdversarialDistance(ClassifierCriterion):
             """
             partial = torch.exp(-self._exp_decay_lambda * partial)
         results = partial.tolist()
-        return partial[0] if batch_dim is None else results
+        return results

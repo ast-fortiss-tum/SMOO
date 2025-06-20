@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import torch
 from torch import Tensor
@@ -17,30 +17,23 @@ class DynamicConfidenceBalance(ClassifierCriterion):
         Initialize the criterion.
 
         :param inverse: Whether the measure should be inverted.
-        :param target_primary: Whether y1 is focus of the measure or yp, if none neither is in focus.
+        :param target_primary: Whether y1 is the focus of the measure or yp is. If none, neither is in focus.
         """
-        super().__init__(inverse=inverse)
+        super().__init__(inverse=inverse, allow_batched=True)
         self._target_primary = target_primary
 
-    def evaluate(
-        self, *, logits: Tensor, label_targets: list[int], batch_dim: Optional[int] = None, **_: Any
-    ) -> Union[float, list[float]]:
+    def evaluate(self, *, logits: Tensor, label_targets: list[int], **_: Any) -> list[float]:
         """
         Calculate the confidence balance of 2 confidence values.
 
-        This functions assumes input range of [0, 1].
+        This function assumes an input range of [0, 1].
 
         :param logits: Logits tensor.
         :param label_targets: Label targets used to determine targets of balance.
-        :param batch_dim: Which dim to use for batchwise operations.
         :param _: Unused kwargs.
         :returns: The value.
         """
         origin = label_targets[0]  # The primary class
-        if batch_dim is None:
-            logits = logits.unsqueeze(0)
-        elif batch_dim != 0:
-            logits = logits.transpose(0, batch_dim)
 
         mask = torch.zeros_like(logits, dtype=torch.bool)
         mask[:, origin] = True
@@ -56,4 +49,4 @@ class DynamicConfidenceBalance(ClassifierCriterion):
             target = logits[:, origin]
 
         result = torch.abs(self._inverse.real - target - d / s).tolist()
-        return result[0] if batch_dim is None else result
+        return result
