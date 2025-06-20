@@ -26,8 +26,9 @@ class REPAEManipulator(Manipulator):
     _in_channels: int
     _latents_scale: Tensor
     _latents_bias: Tensor
-    _epsilon: float = 1e-6  # Precision constant
     _interpolation_strategy: str
+    _cfg: float
+    _epsilon: float = 1e-6  # Precision constant
 
     """Auxiliary lambdas for easy callings."""
     _embed_y: Callable[[list[Tensor]], Tensor]
@@ -35,9 +36,14 @@ class REPAEManipulator(Manipulator):
 
     _manip_function: Callable[..., DiffusionCandidateList]
 
+    """Optimization caches."""
+    _null_embedding_cache: Optional[Tensor] = None
+    _pre_allocated_buffers: dict[str, Tensor]
+
     def __init__(
         self,
         model_file: str,
+        cfg_scale: float = 1.5,
         vae: str = "f16d32",
         model: str = "SiT-XL/1",
         encoder: str = "dinov2-vit-b",
@@ -52,6 +58,7 @@ class REPAEManipulator(Manipulator):
         Initialize the manipulator based on REPA-E diffusion models.
 
         :param model_file: Model file to load weights from.
+        :param cfg_scale: Classifier free guidance scale for conditions in the sampling.
         :param vae: The type of VAE model to use.
         :param model: The type of model to use.
         :param encoder: The type of encoder to use.
@@ -66,6 +73,7 @@ class REPAEManipulator(Manipulator):
         self._prepare_cuda(device)
         self._batch_size = batch_size
         state_dict = torch.load(model_file, weights_only=False)
+        self._cfg = cfg_scale
 
         """Prepare VAE model."""
         if vae == "f8d4":
@@ -81,11 +89,14 @@ class REPAEManipulator(Manipulator):
         self._vae.eval()
         self._vae.to(self._device)
 
-        """Prepare SiT model."""
+        """Prepare SiT model with optimized loading."""
         encoders, _, _ = load_encoders(encoder, "cpu", image_resolution)
         z_dims = [encoder.embed_dim for encoder in encoders] if encoder != "None" else [0]
+        # Immediate cleanup
         del encoders
         gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         self._model = SiT_models[model](
             input_size=self._latent_size,
@@ -112,17 +123,23 @@ class REPAEManipulator(Manipulator):
             state_dict["ema"]["bn.running_mean"].view(1, self._in_channels, 1, 1).to(self._device)
         )
 
-        """Clean up."""
+        """Clean up with optimized memory management."""
         del state_dict
         gc.collect()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
 
         """Define Embedding lambdas"""
         self._embed_y = lambda y: self._model.y_embedder(
             torch.tensor(y, device=self._device), self._model.training
         ).detach()
 
+        """Pre-cache null embedding for CFG."""
+        self._null_embedding_cache = None
+
         self._interpolation_strategy = interpolation_strategy
+        self._pre_allocated_buffers = {}
         if manipulation_strategy == "base":
             self._manip_function = self._manip_aggregate_base
         elif manipulation_strategy == "new":
@@ -161,12 +178,16 @@ class REPAEManipulator(Manipulator):
             weights_x = weights_x.unsqueeze(0)
             weights_y = weights_y.unsqueeze(0)
 
-        """Convert into batches."""
-        xt_target = self._batch_expand(candidates.target[0].xt, batch_size)
-        xt_origin = self._batch_expand(candidates.origin[0].xt, batch_size)
+        """Convert into batches with optimized expansion."""
+        target_xt = candidates.target[0].xt
+        origin_xt = candidates.origin[0].xt
+        target_emb = candidates.target[0].class_embedding
+        origin_emb = candidates.origin[0].class_embedding
 
-        y_target = self._batch_expand(candidates.target[0].class_embedding, batch_size)
-        y_origin = self._batch_expand(candidates.origin[0].class_embedding, batch_size)
+        xt_target = target_xt.unsqueeze(0).expand(batch_size, *target_xt.shape).contiguous()
+        xt_origin = origin_xt.unsqueeze(0).expand(batch_size, *origin_xt.shape).contiguous()
+        y_target = target_emb.unsqueeze(0).expand(batch_size, *target_emb.shape).contiguous()
+        y_origin = origin_emb.unsqueeze(0).expand(batch_size, *origin_emb.shape).contiguous()
 
         """The manipulation process."""
         manip_cand = self._manip_function(
@@ -177,8 +198,10 @@ class REPAEManipulator(Manipulator):
             weights_y=weights_y,
         )
 
-        del xt_target, xt_origin, y_origin, y_target
-        torch.cuda.empty_cache()
+        # Explicit cleanup with immediate cache clearing
+        del xt_target, xt_origin, y_origin, y_target, target_xt, origin_xt, target_emb, origin_emb
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         """Return a candidate with the manipulation history if wanted."""
         return (
             (manip_cand.xts[:, -1, ...], manip_cand)
@@ -208,13 +231,21 @@ class REPAEManipulator(Manipulator):
         xt_origin, y_origin = origin
         xt_target, y_target = target
 
+        # Pre-compute interpolated embeddings
         y_manip = self.interpolate(y_origin, y_target, weights_y, dim=(1,)).float()
-        xt_template = torch.zeros_like(xt_origin)
+
+        # Pre-allocate template with better memory layout
+        buffer_key = xt_origin.shape
+        if buffer_key not in self._pre_allocated_buffers:
+            self._pre_allocated_buffers[buffer_key] = torch.empty_like(xt_origin)
+        xt_template = self._pre_allocated_buffers[buffer_key]
+        xt_template.zero_()
+
         for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
             x_manip = self.interpolate(
                 xt_origin[:, i, ...], xt_target[:, i, ...], weights_x[:, i], dim=(1,)
             ).float()
-            x_manip = (xt_template[:, i, ...] + x_manip) / 2
+            x_manip.add_(xt_template[:, i, ...]).mul_(0.5)
             x_cur = self._sample(t=t_cur, x=x_manip, y=y_manip[:, i, ...], step=t_next - t_cur)
             xt_template[:, i + 1, ...] = x_cur
         # Transposing from Batch x DiffSteps x Z -> DiffSteps x Batch x Z
@@ -248,14 +279,16 @@ class REPAEManipulator(Manipulator):
         xt_origin, y_origin = origin
         xt_target, y_target = target
 
-        """Do the manipulations on batches."""
+        """Do the manipulations on batches with optimized memory usage."""
         y_manip = self.interpolate(y_origin, y_target, weights_y, dim=(1,)).float()
+
         for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
             x_manip = self.interpolate(
                 xt_origin[:, i, ...], xt_target[:, i, ...], weights_x[:, i], dim=(1,)
             ).float()
             x_cur = self._sample(t=t_cur, x=x_manip, y=y_manip[:, i, ...], step=t_next - t_cur)
             xt_target[:, i + 1, ...] = x_cur
+            del x_manip, x_cur
 
         # Transposing from Batch x DiffSteps x Z -> DiffSteps x Batch x Z
         diff_candidates = DiffusionCandidateList.from_diffusion_output(
@@ -263,24 +296,12 @@ class REPAEManipulator(Manipulator):
         )
         return diff_candidates
 
-    @staticmethod
-    def _batch_expand(tensor: Tensor, batch_size: int) -> Tensor:
-        """
-        Batch expand a tensor.
-
-        :param tensor: Tensor to expand.
-        :param batch_size: Batch size.
-        :returns: The expanded tensor.
-        """
-        return tensor.unsqueeze(0).expand(batch_size, *tensor.shape).clone()
-
     def _sample(
         self,
         t: Tensor,
         x: Tensor,
         y: Tensor,
         step: float,
-        cfg_scale: float = 1.5,  # TODO: check other values
         guidance_bounds: tuple[float, float] = (0.0, 1.0),
     ) -> Tensor:
         """
@@ -290,18 +311,22 @@ class REPAEManipulator(Manipulator):
         :param x: The current state of the diffusion process.
         :param y: The current class embedding of the diffusion process.
         :param step: The step size.
-        :param cfg_scale: CFG scale for conditions in the sampling.
         :param guidance_bounds: Guidance bounds for conditions in the sampling.
         :returns: The sampled outputs for the current timestep.
         """
-        cond = cfg_scale > 1.0 and guidance_bounds[1] >= t >= guidance_bounds[0]
+        cond = self._cfg > 1.0 and guidance_bounds[1] >= t >= guidance_bounds[0]
 
         with torch.no_grad():
             t_curr = torch.full(size=(y.size(0),), fill_value=t, device=self._device)  # noqa
             if cond:
                 model_input = x.repeat(2, *([1] * (x.ndim - 1)))
-                y_null = self._embed_y([1000] * y.shape[0])  # Get class unconditional embeddings.
-                y_curr = torch.cat((y, y_null), dim=0)
+                # Use cached null embedding if available
+                if (
+                    self._null_embedding_cache is None
+                    or self._null_embedding_cache.shape[0] != y.shape[0]
+                ):
+                    self._null_embedding_cache = self._embed_y([1000] * y.shape[0])
+                y_curr = torch.cat((y, self._null_embedding_cache), dim=0)
                 t_curr = t_curr.repeat(2, *([1] * (t_curr.ndim - 1)))
             else:
                 model_input, y_curr = x, y
@@ -309,33 +334,46 @@ class REPAEManipulator(Manipulator):
 
         if cond:
             d_cur_cond, d_cur_uncond = d_cur.chunk(2)
-            d_cur = d_cur_uncond + cfg_scale * (d_cur_cond - d_cur_uncond)
+            d_cur = d_cur_uncond + self._cfg * (d_cur_cond - d_cur_uncond)
 
         return (x + step * d_cur).detach()
 
     def get_diff_steps(self, class_labels: list[int], n_steps: int = 50) -> tuple[Tensor, Tensor]:
         """
-        Get latent information for all diffusion steps.
+        Get latent information for all diffusion steps with optimized memory usage.
 
         :param class_labels: Class label to generate diffusion steps for.
         :param n_steps: Number of steps in the denoising.
         :returns: A list of latent vectors through denoising and the class embedding.
         """
+        batch_size = len(class_labels)
+
         x_cur = torch.randn(
-            len(class_labels),
+            batch_size,
             self._in_channels,
             self._latent_size,
             self._latent_size,
             device=self._device,
-        )  # TODO: is not saved, check if required
+        )
+
         t_steps = torch.linspace(1, 0, n_steps + 1, device=self._device)
         y_cur = self._embed_y(class_labels)
 
-        xs = []
-        for t_cur, t_next in zip(t_steps[:-1], t_steps[1:]):
+        xs = torch.empty(
+            n_steps,
+            batch_size,
+            self._in_channels,
+            self._latent_size,
+            self._latent_size,
+            device=self._device,
+        )
+
+        # Optimized diffusion loop with in-place updates
+        for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):
             x_cur = self._sample(t=t_cur, x=x_cur, y=y_cur, step=t_next - t_cur)
-            xs.append(x_cur)
-        return torch.stack(xs), y_cur
+            xs[i] = x_cur
+
+        return xs, y_cur
 
     def get_image(self, z: Tensor) -> Tensor:
         """
@@ -345,30 +383,41 @@ class REPAEManipulator(Manipulator):
         :return: The decoded image.
         """
         logging.info("Sampling Images from denoised Latents.")
-        decoded = []
-        batch_size = max(self._batch_size or z.size(0), 1)
-        chunks = (z.size(0) + batch_size - 1) // batch_size
 
+        chunks = (
+            (z.size(0) + self._batch_size - 1) // self._batch_size
+            if self._batch_size > 0
+            else z.size(0)
+        )
+        decoded = []
         for z_chunk in torch.chunk(z, chunks, dim=0):
             with torch.no_grad():
-                element = self._vae.decode(
-                    (z_chunk / self._latents_scale) + self._latents_bias
-                ).sample
-            element = (element.detach() + 1.0) / 2.0
-            element = torch.clamp(element, 0.0, 1.0)
-            decoded.append(element)
+                decoded_latents = (z_chunk / self._latents_scale) + self._latents_bias
+                element = self._vae.decode(decoded_latents).sample
+                element = torch.clamp(element.mul_(0.5).add_(0.5), 0.0, 1.0)
+                decoded.append(element)
+            del decoded_latents
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
-        element = torch.cat(decoded, dim=0)
-        return element
+        return torch.cat(decoded, dim=0)
 
     def _prepare_cuda(self, device: Union[torch.device, None]) -> None:
-        """Prepare cuda environment, as done in the REPA-E repository."""
+        """Prepare optimized CUDA environment."""
         torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True
         assert (
             torch.cuda.is_available()
         ), "Sampling with DDP requires at least one GPU. sample.py supports CPU-only usage"
+
         torch.set_grad_enabled(False)
         self._device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Additional CUDA optimizations
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.set_per_process_memory_fraction(0.95)
 
     @staticmethod
     def linear(p: Tensor, q: Tensor, weight: Tensor) -> Tensor:
@@ -387,7 +436,7 @@ class REPAEManipulator(Manipulator):
         self, p: Tensor, q: Tensor, weight: Tensor, dim: Optional[tuple[int, ...]] = None
     ) -> Tensor:
         """
-        Implement interpolation for Tensors.
+        Implement optimized interpolation for Tensors.
 
         :param p: The first tensor.
         :param q: The second tensor.
@@ -398,20 +447,24 @@ class REPAEManipulator(Manipulator):
         """
         if weight.ndim == 0:
             weight = weight.view(1)
-        for _ in range(p.ndim - weight.ndim):
-            weight = weight.unsqueeze(-1)
 
+        target_ndim = p.ndim
+        current_ndim = weight.ndim
+        if current_ndim < target_ndim:
+            shape_ext = [1] * (target_ndim - current_ndim)
+            weight = weight.view(*weight.shape, *shape_ext)
+
+        # Branch prediction optimization - most common case first
         if self._interpolation_strategy == "linear":
-            result = self.linear(p, q, weight)
+            return self.linear(p, q, weight)
         elif self._interpolation_strategy == "slerp":
-            result = self.slerp(p, q, weight, dim)
+            return self.slerp(p, q, weight, dim)
         else:
             raise ValueError(f"Unknown interpolation strategy {self._interpolation_strategy}")
-        return result
 
     def slerp(self, p: Tensor, q: Tensor, weight: Tensor, dim: Optional[tuple[int, ...]]) -> Tensor:
         """
-        Weights for spherical linear interpolation.
+        Optimized spherical linear interpolation.
 
         :param p: The first tensor.
         :param q: The second tensor.
@@ -419,21 +472,25 @@ class REPAEManipulator(Manipulator):
         :param dim: The dimensions to do operations across.
         :return: The interpolated tensor.
         """
-        p_norm = p / torch.linalg.norm(p, dim=dim, keepdim=True).clamp_min(self._epsilon)
-        q_norm = q / torch.linalg.norm(q, dim=dim, keepdim=True).clamp_min(self._epsilon)
-        dot = (
-            (p_norm * q_norm)
-            .sum(dim=dim, keepdim=True)
-            .clamp(-1.0 + self._epsilon, 1.0 - self._epsilon)
+        p_norm_val = torch.linalg.norm(p, dim=dim, keepdim=True).clamp_min(self._epsilon)
+        q_norm_val = torch.linalg.norm(q, dim=dim, keepdim=True).clamp_min(self._epsilon)
+
+        p_norm = p / p_norm_val
+        q_norm = q / q_norm_val
+
+        dot = torch.sum(p_norm * q_norm, dim=dim, keepdim=True).clamp(
+            -1.0 + self._epsilon, 1.0 - self._epsilon
         )
 
-        """To avoid instabilities go to linear interpolation if values are too small."""
-        if torch.all(torch.abs(dot) > 1 - (5 * self._epsilon)):
+        abs_dot = torch.abs(dot)
+        fallback_threshold = 1.0 - (5 * self._epsilon)
+        if torch.all(abs_dot > fallback_threshold):
             return self.linear(p, q, weight)
 
         omega = torch.arccos(dot)
         sin_omega = torch.sin(omega).clamp_min(self._epsilon)
         omega_w = omega * weight
+
         wp = torch.sin(omega - omega_w) / sin_omega
         wq = torch.sin(omega_w) / sin_omega
         return wp * p + wq * q

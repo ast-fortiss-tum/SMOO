@@ -23,7 +23,11 @@ class SegMapIoU(ImageCriterion):
         :param inverse: Whether the measure should be inverted (default: False).
         """
         super().__init__(inverse)
-        self._blur = lambda x: x if gaussian_params is None else gaussian_blur(x, *gaussian_params)
+        self._blur = (
+            (lambda x: x)
+            if gaussian_params is None
+            else (lambda x: gaussian_blur(x, *gaussian_params))
+        )
 
     @torch.no_grad()
     def evaluate(

@@ -94,7 +94,7 @@ class Optimizer(ABC):
         self._best_candidates = candidates
 
     def reset(self) -> None:
-        """Reset the learner to default."""
+        """Reset the learner to the default."""
         self._x_current = np.random.uniform(
             low=self._bounds[0], high=self._bounds[1], size=self._x_current.shape
         )
@@ -115,16 +115,17 @@ class Optimizer(ABC):
     @property
     def previous_best(self) -> list[OptimizerCandidate]:
         """
-        Get the previously best candidates.
+        Get the previous best candidates.
 
         :return: The candidate.
         """
         return self._previous_best
 
     @property
-    def learner_type(self) -> Type:
+    def optimizer_type(self) -> Type:
         """
         Get the type of learner.
+
 
         :returns: The type.
         """

@@ -59,7 +59,7 @@ class AdversarialDistance(ClassifierCriterion):
         else:
             mask = torch.zeros_like(logits, dtype=torch.bool)
             mask[:, origin] = True
-            second_term = logits.masked_fill(mask, torch.inf).max(dim=1).values
+            second_term = logits.masked_fill(mask, -torch.inf).max(dim=1).values
 
         partial = (-1) ** (2 - self._inverse.real) * (
             logits[:, origin] - second_term
