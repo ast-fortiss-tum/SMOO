@@ -47,6 +47,8 @@ class DiffTester(SMOO):
         restrict_classes: Optional[list[int]] = None,
         use_wandb: bool = True,
         early_termination: Optional[Callable[[Any], tuple[bool, Any]]] = None,
+        use_diffusion_manipulation: bool = True,
+        use_condition_manipulation: bool = True,
     ):
         """
         Initialize the Diffusion Tester.
@@ -61,6 +63,8 @@ class DiffTester(SMOO):
         :param restrict_classes: What classes to restrict to.
         :param use_wandb: Whether to use wandb for logging.
         :param early_termination: An optional early termination function.
+        :param use_diffusion_manipulation: Whether to use diffusion manipulation.
+        :param use_condition_manipulation: Whether to use condition manipulation.
         """
         super().__init__(
             sut=sut,
@@ -75,6 +79,9 @@ class DiffTester(SMOO):
         self._solution_shape = solutions_shapes
         self._early_termination = early_termination or (lambda _: (False, None))
 
+        self.d_cond = use_diffusion_manipulation.real
+        self.c_cond = use_condition_manipulation.real
+
     def test(self) -> None:
         """Start the diffusion-based testing."""
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -84,14 +91,14 @@ class DiffTester(SMOO):
             logging.info(f"Test class {class_id}, sample idx {sample_idx}.")
 
             """Get initial origin and target candidates."""
-            source, y_hat, origin_image = self._find_valid_candidate(class_id, is_origin=True)
+            origin, y_hat, origin_image = self._find_valid_candidate(class_id, is_origin=True)
             origin_batch = origin_image.expand(
                 self._optimizer.get_x_current().shape[0], *origin_image.shape[1:]
             )  # These are just memory views: if inplace function needed do .clone()
             _, second, *_ = torch.argsort(y_hat[0], descending=True)
 
             target, _, target_image = self._find_valid_candidate(second, is_origin=False)
-            candidates = DiffusionCandidateList(source, target)
+            candidates = DiffusionCandidateList(origin, target)
             global_start = time()  # Stores the start time of the current experiment.
 
             """We run the optimization for one output."""
@@ -126,7 +133,7 @@ class DiffTester(SMOO):
                 for i, bc in enumerate(self._optimizer.best_candidates):
                     self._save_tensor_as_image(bc.data[0], log_dir + f"/best_{i}.png")
                     stats[f"best_{i}_y_hat"] = bc.data[1].tolist()
-                    stats[f"best_{i}_solution"] = res.solutions[i].tolist()
+                    stats[f"best_{i}_solution"] = bc.solution.tolist()
                     stats[f"best_{i}_fitness"] = list(bc.fitness)
             """Here we save the standard images for easy comparison."""
             self._save_tensor_as_image(origin_image, log_dir + f"/origin_{class_id}.png")
@@ -157,19 +164,22 @@ class DiffTester(SMOO):
 
         start_idx = 0  # The start index for solution chunks.
         budget_used: int = 0  # Computational budget measured by SUT evals.
-        solution_cache = np.random.beta(
-            a=0.5, b=5, size=self._solution_shape
-        )  # Default solution shape.
+        solution_cache = np.zeros(self._solution_shape)  # An empty solution array.
+
         all_gen_data: list[dict] = []  # Stores fitness values of individuals per generation.
         term_selection: Optional[NDArray] = None  # Which outputs triggered the early termination.
         terminate_early = False
+        xs = torch.empty(0)  # Empty variable to allow static checkers to see it is there.
+        predictions = torch.empty(0)  # Empty variable to allow static checkers to see it is there.
 
         """Start population based optimization."""
         for f, solution_size in enumerate(self._config.optimizer_schedule):
             """Adapt problem to fit solution chunk."""
+            sol_chunk = solution_cache[:, :, start_idx : start_idx + solution_size]
+            # We sample for the size of the solution chunk with some custom distribution.
             self._optimizer.update_problem(
                 solution_shape=(2, solution_size),
-                sampling=solution_cache[:, :, start_idx : start_idx + solution_size],
+                sampling=np.random.beta(a=1, b=5, size=sol_chunk.shape),
             )
             logging.info("=" * 50)
             logging.info(
@@ -189,7 +199,7 @@ class DiffTester(SMOO):
 
                 """Here we reverse the tensor as the first diffusion steps would be on the back of the weights."""
                 sols = torch.as_tensor(solution_cache).flip(-1)
-                xw, yw = sols[:, 0, ...], sols[:, 1, ...]
+                xw, yw = sols[:, 0, ...] * self.d_cond, sols[:, 1, ...] * self.c_cond
                 xs_new = self._manipulator.manipulate(candidates, xw, yw)
 
                 """We predict the label from the mixed images."""
@@ -290,7 +300,7 @@ class DiffTester(SMOO):
                     config={
                         "experiment_start": exp_start,
                         "label": class_idx,
-                        "learner_type": self._optimizer.learner_type,
+                        "learner_type": self._optimizer.optimizer_type,
                     },
                     settings=wandb.Settings(
                         silent=silent,

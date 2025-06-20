@@ -319,7 +319,7 @@ class MimicryTester(SMOO):
                     "pop_size": self._optimizer._x_current.shape[0],
                     "experiment_start": exp_start,
                     "label": class_idx,
-                    "learner_type": self._optimizer.learner_type,
+                    "learner_type": self._optimizer.optimizer_type,
                 },
                 settings=wandb.Settings(silent=silent),
             )
