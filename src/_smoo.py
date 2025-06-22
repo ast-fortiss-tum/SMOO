@@ -19,7 +19,9 @@ class SMOO(ABC):
     _sut: SUT
     _manipulator: Manipulator
     _optimizer: Optimizer
-    _objectives: Union[list[Criterion], CriterionCollection]
+    _objectives: Union[
+        list[Criterion], CriterionCollection
+    ]  # TODO: refractor stuff to remove lists
 
     _restrict_classes: Optional[list[int]]
     _silent: bool
@@ -31,19 +33,17 @@ class SMOO(ABC):
         manipulator: Manipulator,
         optimizer: Optimizer,
         objectives: Union[list[Criterion], CriterionCollection],
-        silent_wandb: bool,
         restrict_classes: Optional[list[int]],
         use_wandb: bool,
     ):
         """
-        Initialize the Neural Tester.
+        Initialize the SMOO Object.
 
         :param sut: The system-under-test.
         :param manipulator: The manipulator object.
         :param optimizer: The optimizer object.
         :param objectives: The objectives used.
-        :param silent_wandb: Whether to silence wandb.
-        :param restrict_classes: What classes to restrict to.
+        :param restrict_classes: What classes to restrict predictions to.
         :param use_wandb: Whether to use wandb.
         """
 
@@ -52,12 +52,11 @@ class SMOO(ABC):
         self._optimizer = optimizer
         self._objectives = objectives
 
-        self._silent = silent_wandb
         self._restrict_classes = restrict_classes
         self._use_wandb = use_wandb
 
     @abstractmethod
-    def test(self):
+    def test(self) -> None:
         """Every workflow needs a testing loop."""
         ...
 
@@ -129,5 +128,4 @@ class SMOO(ABC):
         """
         logging.info(f"Feeding Testcases to {self._sut.__class__.__name__}.")
         y_hat = self._sut.process_input(x)
-        # TODO: restrict classes is too specific maybe refractor.
         return y_hat if self._restrict_classes is None else y_hat[:, self._restrict_classes]
