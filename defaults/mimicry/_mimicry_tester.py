@@ -52,10 +52,10 @@ class MimicryTester(SMOO):
         """
         Initialize the Neural Tester.
 
-        :param sut: The system under test.
+        :param sut: The system-under-test.
         :param manipulator: The manipulator object.
         :param optimizer: The optimizer object.
-        :param objectives: The objectives list.
+        :param objectives: The objectives.
         :param config: The experiment config.
         :param frontier_pairs: Whether the frontier pairs should be searched for.
         :param num_w0: The number of primary seeds.
@@ -68,7 +68,6 @@ class MimicryTester(SMOO):
             manipulator=manipulator,
             optimizer=optimizer,
             objectives=objectives,
-            silent_wandb=silent_wandb,
             restrict_classes=restrict_classes,
             use_wandb=True,
         )
@@ -77,6 +76,7 @@ class MimicryTester(SMOO):
         self._num_ws = num_ws
         self._config = config
 
+        self._silent = silent_wandb
         self._df = DefaultDF(pairs=frontier_pairs, additional_fields=["genome"])
 
     def test(self, validity_domain: bool = False) -> None:
@@ -118,7 +118,7 @@ class MimicryTester(SMOO):
             """
             Note that the w0s and ws' do not have to share a label, but for this implementation we do not control the labels separately.
             """
-            # To save compute we parse tha cached tensors of w vectors as we generated them already for getting the initial prediction.
+            # We parse the cached tensors of w vectors as we generated them already for getting the initial prediction.
             w0c = [
                 MixCandidate(label=class_idx, is_w0=True, w_tensor=tensor) for tensor in w0_tensors
             ]
@@ -130,7 +130,7 @@ class MimicryTester(SMOO):
             for _ in range(self._config.generations):
                 # We define the inner loop with its parameters.
                 images, fitness, preds = self._inner_loop(candidates, class_idx, second)
-                # Assign fitness to current population and additional data (in our case images).
+                # Assign fitness and additional data (in our case images) to the current population.
                 self._optimizer.assign_fitness(fitness, images, preds.tolist())
                 self._optimizer.new_population()
             # Evaluate the last generation.
@@ -171,7 +171,7 @@ class MimicryTester(SMOO):
                 genome,
             ]
             self._df.append_row(results)
-            self._optimizer.reset()  # Reset the learner for new candidate.
+            self._optimizer.reset()  # Reset the learner to have clean slate in next iteration.
             logging.info("\tReset learner!")
 
         logging.info("Saving Experiments to DF")
@@ -238,7 +238,7 @@ class MimicryTester(SMOO):
 
         # Logging Operations
         results = {}
-        # Log statistics for each objective function seperatly.
+        # Log statistics for each objective function seperately.
         for metric, obj in zip(self._objectives, fitness):
             results |= {
                 f"min_{metric.name}": obj.min(),
@@ -256,9 +256,9 @@ class MimicryTester(SMOO):
         """
         Generate seeds for a specific class.
 
-        :param amount: The amount of seeds to be generated.
+        :param amount: The number of seeds to be generated.
         :param cls: The class to be generated.
-        :returns: The w vectors generated, the corresponding images, confidence values and the amount of trials needed.
+        :returns: The generated w vectors, the corresponding images, confidence values and the amount of trials needed.
         """
         ws: list[Tensor] = []
         imgs: list[Tensor] = []
@@ -276,7 +276,7 @@ class MimicryTester(SMOO):
             img = self._assure_rgb(img)
             y_hat = self._process(img.unsqueeze(0))
 
-            # We are only interested in candidate if the prediction matches the label
+            # We are only interested in a candidate if the prediction matches the label.
             if y_hat.argmax() == cls:
                 ws.append(w)
                 imgs.append(img)
@@ -288,8 +288,8 @@ class MimicryTester(SMOO):
         """
         Generate noise.
 
-        :param amount: The amount of seeds to be generated.
-        :returns: The w vectors generated, the corresponding images, confidence values and the amount of trials needed.
+        :param amount: The number of seeds to be generated.
+        :returns: The generated w vectors, the corresponding images, confidence values and the number of trials needed.
         """
         logging.info("Generate noise seeds.")
         # For logging purposes to see how many samples we need to find valid seed.
