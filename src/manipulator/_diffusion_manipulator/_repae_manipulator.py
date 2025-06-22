@@ -336,7 +336,7 @@ class REPAEManipulator(Manipulator):
             d_cur_cond, d_cur_uncond = d_cur.chunk(2)
             d_cur = d_cur_uncond + self._cfg * (d_cur_cond - d_cur_uncond)
 
-        return (x + step * d_cur).detach()
+        return x + step * d_cur
 
     def get_diff_steps(self, class_labels: list[int], n_steps: int = 50) -> tuple[Tensor, Tensor]:
         """
@@ -373,7 +373,7 @@ class REPAEManipulator(Manipulator):
             x_cur = self._sample(t=t_cur, x=x_cur, y=y_cur, step=t_next - t_cur)
             xs[i] = x_cur
 
-        return xs, y_cur
+        return xs.detach(), y_cur
 
     def get_image(self, z: Tensor) -> Tensor:
         """
@@ -383,6 +383,8 @@ class REPAEManipulator(Manipulator):
         :return: The decoded image.
         """
         logging.info("Sampling Images from denoised Latents.")
+        if z.ndim == 3:  # Ensure batch dimension is present.
+            z = z.unsqueeze(0)
 
         chunks = (
             (z.size(0) + self._batch_size - 1) // self._batch_size
@@ -399,7 +401,6 @@ class REPAEManipulator(Manipulator):
             del decoded_latents
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-
         return torch.cat(decoded, dim=0)
 
     def _prepare_cuda(self, device: Union[torch.device, None]) -> None:
