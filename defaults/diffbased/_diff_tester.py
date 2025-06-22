@@ -42,13 +42,9 @@ class DiffTester(SMOO):
         optimizer: Optimizer,
         objectives: CriterionCollection,
         config: ExperimentConfig,
-        solutions_shapes: tuple[int, ...],
-        silent_wandb: bool = False,
-        restrict_classes: Optional[list[int]] = None,
-        use_wandb: bool = True,
         early_termination: Optional[Callable[[Any], tuple[bool, Any]]] = None,
-        use_diffusion_manipulation: bool = True,
-        use_condition_manipulation: bool = True,
+        silent_wandb: bool = False,
+        use_wandb: bool = True,
     ):
         """
         Initialize the Diffusion Tester.
@@ -58,13 +54,9 @@ class DiffTester(SMOO):
         :param optimizer: The optimizer object.
         :param objectives: The objectives used for fitness calculation.
         :param config: The experiment config.
-        :param solutions_shapes: The solution size for optimization.
-        :param silent_wandb: Whether to silence wandb.
-        :param restrict_classes: What classes to restrict to.
-        :param use_wandb: Whether to use wandb for logging.
         :param early_termination: An optional early termination function.
-        :param use_diffusion_manipulation: Whether to use diffusion manipulation.
-        :param use_condition_manipulation: Whether to use condition manipulation.
+        :param silent_wandb: Whether to silence wandb.
+        :param use_wandb: Whether to use wandb for logging.
         """
         super().__init__(
             sut=sut,
@@ -72,15 +64,11 @@ class DiffTester(SMOO):
             optimizer=optimizer,
             objectives=objectives,
             silent_wandb=silent_wandb,
-            restrict_classes=restrict_classes,
+            restrict_classes=config.restrict_classes,
             use_wandb=use_wandb,
         )
         self._config = config
-        self._solution_shape = solutions_shapes
         self._early_termination = early_termination or (lambda _: (False, None))
-
-        self.d_cond = use_diffusion_manipulation.real
-        self.c_cond = use_condition_manipulation.real
 
     def test(self) -> None:
         """Start the diffusion-based testing."""
@@ -97,12 +85,13 @@ class DiffTester(SMOO):
             )  # These are just memory views: if inplace function needed do .clone()
             _, second, *_ = torch.argsort(y_hat[0], descending=True)
 
-            target, _, target_image = self._find_valid_candidate(second, is_origin=False)
+            target_class = int(second.item()) if self._config.run_targeted else class_id
+            target, _, target_image = self._find_valid_candidate(target_class, is_origin=False)
             candidates = DiffusionCandidateList(origin, target)
             global_start = time()  # Stores the start time of the current experiment.
 
             """We run the optimization for one output."""
-            res = self._optimization_loop(candidates, origin_batch, [class_id, int(second.item())])
+            res = self._optimization_loop(candidates, origin_batch, [class_id, target_class])
 
             """Save data."""
             log_dir = os.path.join(
@@ -137,7 +126,7 @@ class DiffTester(SMOO):
                     stats[f"best_{i}_fitness"] = list(bc.fitness)
             """Here we save the standard images for easy comparison."""
             self._save_tensor_as_image(origin_image, log_dir + f"/origin_{class_id}.png")
-            self._save_tensor_as_image(target_image, log_dir + f"/taget_{second.item()}.png")
+            self._save_tensor_as_image(target_image, log_dir + f"/taget_{target_class}.png")
 
             with open(f"{log_dir}/stats.json", "w") as f:
                 f.write(json.dumps(stats))
@@ -164,7 +153,7 @@ class DiffTester(SMOO):
 
         start_idx = 0  # The start index for solution chunks.
         budget_used: int = 0  # Computational budget measured by SUT evals.
-        solution_cache = np.zeros(self._solution_shape)  # An empty solution array.
+        solution_cache = np.zeros(self._config.solution_shape)  # An empty solution array.
 
         all_gen_data: list[dict] = []  # Stores fitness values of individuals per generation.
         term_selection: Optional[NDArray] = None  # Which outputs triggered the early termination.
@@ -198,8 +187,10 @@ class DiffTester(SMOO):
                 )
 
                 """Here we reverse the tensor as the first diffusion steps would be on the back of the weights."""
-                sols = torch.as_tensor(solution_cache).flip(-1)
-                xw, yw = sols[:, 0, ...] * self.d_cond, sols[:, 1, ...] * self.c_cond
+                sol_tensor = torch.as_tensor(solution_cache)
+                sols = sol_tensor if self._config.reverse_schedule else sol_tensor.flip(-1)
+                xw = sols[:, 0, ...] * self._config.use_diffusion_manipulation.real
+                yw = sols[:, 1, ...] * self._config.use_condition_manipulation.real
                 xs_new = self._manipulator.manipulate(candidates, xw, yw)
 
                 """We predict the label from the mixed images."""
@@ -238,7 +229,7 @@ class DiffTester(SMOO):
                     )
                     break
                 else:
-                    del xw, yw, xsc, xs_new
+                    del xw, yw, xsc, xs_new, sol_tensor
                     self._cleanup()  # Free up some memory
 
             """Assign best candidates uniformly to the cached solution."""
