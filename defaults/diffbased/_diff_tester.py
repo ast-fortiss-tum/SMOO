@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from itertools import product
 from time import time
-from typing import Any, Callable, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 from PIL import Image
 from torch import Tensor
 
-from src import SMOO
+from src import SMOO, TEarlyTermCallable
 from src.manipulator import DiffusionCandidate, DiffusionCandidateList, REPAEManipulator
 from src.objectives import CriterionCollection
 from src.optimizer import Optimizer, PymooOptimizer
@@ -42,8 +42,7 @@ class DiffTester(SMOO):
         optimizer: Optimizer,
         objectives: CriterionCollection,
         config: ExperimentConfig,
-        early_termination: Optional[Callable[[Any], tuple[bool, Any]]] = None,
-        silent_wandb: bool = False,
+        early_termination: TEarlyTermCallable,
         use_wandb: bool = True,
     ):
         """
@@ -55,7 +54,6 @@ class DiffTester(SMOO):
         :param objectives: The objectives used for fitness calculation.
         :param config: The experiment config.
         :param early_termination: An optional early termination function.
-        :param silent_wandb: Whether to silence wandb.
         :param use_wandb: Whether to use wandb for logging.
         """
         super().__init__(
@@ -63,12 +61,11 @@ class DiffTester(SMOO):
             manipulator=manipulator,
             optimizer=optimizer,
             objectives=objectives,
-            silent_wandb=silent_wandb,
             restrict_classes=config.restrict_classes,
             use_wandb=use_wandb,
+            early_termination=early_termination,
         )
         self._config = config
-        self._early_termination = early_termination or (lambda _: (False, None))
 
     def test(self) -> None:
         """Start the diffusion-based testing."""
@@ -207,7 +204,7 @@ class DiffTester(SMOO):
                         "batch_dim": 0,
                     }
                 )
-                results = self._objectives.get_all_results()
+                results = self._objectives.results
 
                 row = {
                     "generation": i,

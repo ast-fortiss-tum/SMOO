@@ -1,7 +1,7 @@
 import datetime
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import wandb
 from torch import Tensor
@@ -10,6 +10,8 @@ from .manipulator import Manipulator
 from .objectives import Criterion, CriterionCollection
 from .optimizer import Optimizer
 from .sut import SUT
+
+TEarlyTermCallable = Optional[Callable[[Any], tuple[bool, Optional[Any]]]]
 
 
 class SMOO(ABC):
@@ -35,6 +37,7 @@ class SMOO(ABC):
         objectives: Union[list[Criterion], CriterionCollection],
         restrict_classes: Optional[list[int]],
         use_wandb: bool,
+        early_termination: TEarlyTermCallable = None,
     ):
         """
         Initialize the SMOO Object.
@@ -45,6 +48,7 @@ class SMOO(ABC):
         :param objectives: The objectives used.
         :param restrict_classes: What classes to restrict predictions to.
         :param use_wandb: Whether to use wandb.
+        :param early_termination: A function that can be used to early terminate the workflow.
         """
 
         self._sut = sut
@@ -54,6 +58,7 @@ class SMOO(ABC):
 
         self._restrict_classes = restrict_classes
         self._use_wandb = use_wandb
+        self._early_termination = early_termination or (lambda _: (False, None))
 
     @abstractmethod
     def test(self) -> None:

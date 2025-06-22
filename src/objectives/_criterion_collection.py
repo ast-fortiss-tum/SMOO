@@ -2,12 +2,14 @@ from typing import Any, Type, Union
 
 from ._criterion import Criterion
 
+TCriterionResults = dict[str, Union[float, list[float]]]
+
 
 class CriterionCollection:
     """A collection of criteria that simplifies calling and evaluation in addition to having better organization of results."""
 
     _criteria: list[Criterion]
-    _results: dict[type[Criterion], Union[float, list[float]]]
+    _results: TCriterionResults
 
     def __init__(self, criteria: list[Criterion]) -> None:
         """
@@ -25,7 +27,7 @@ class CriterionCollection:
         :param iargs: The input arguments.
         """
         for criterion in self._criteria:
-            self._results[type(criterion)] = criterion.evaluate(**iargs)
+            self._results[criterion.name] = criterion.evaluate(**iargs)
 
     def get_results_of(
         self, criterion: Union[Type[Criterion], Criterion]
@@ -36,16 +38,17 @@ class CriterionCollection:
         :param criterion: The criterion type.
         :returns: The results.
         """
-        key = criterion if isinstance(criterion, type) else type(criterion)
-        return self._results[key]
+        criterion = criterion if isinstance(criterion, Criterion) else criterion()
+        return self._results[criterion.name]
 
-    def get_all_results(self) -> dict[str, Union[float, list[float]]]:
+    @property
+    def results(self) -> TCriterionResults:
         """
-        Get all results of the collection in form of a dictionary.
+        Get all results of the collection as a dictionary.
 
         :returns: The results dictionary, with keys as criterion names.
         """
-        return {c.name: self.get_results_of(c) for c in self._criteria}
+        return self._results
 
     @property
     def names(self) -> list[str]:

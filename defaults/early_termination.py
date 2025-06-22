@@ -3,14 +3,14 @@ from typing import Callable, Optional
 import numpy as np
 from numpy.typing import NDArray
 
-from src.objectives import Criterion
+from src.objectives import Criterion, TCriterionResults
 
 
 def get_early_termination(
     target_criterion: Criterion,
     target_condition: Callable[[NDArray], NDArray],
     fulfill: str = "any",
-) -> Callable[[dict], tuple[bool, Optional[NDArray]]]:
+) -> Callable[[TCriterionResults], tuple[bool, Optional[NDArray]]]:
     """
     Get an early termination condition from provided parameters.
 
@@ -27,7 +27,7 @@ def get_early_termination(
     else:
         raise ValueError(f"Unknown fulfill option: {fulfill}")
 
-    def condition_function(results: dict) -> tuple[bool, Optional[NDArray]]:
+    def condition_function(results: TCriterionResults) -> tuple[bool, Optional[NDArray]]:
         """
         The condition generated.
 
