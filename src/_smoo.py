@@ -38,10 +38,10 @@ class SMOO(ABC):
         """
         Initialize the Neural Tester.
 
-        :param sut: The system under test.
+        :param sut: The system-under-test.
         :param manipulator: The manipulator object.
         :param optimizer: The optimizer object.
-        :param objectives: The objectives list.
+        :param objectives: The objectives used.
         :param silent_wandb: Whether to silence wandb.
         :param restrict_classes: What classes to restrict to.
         :param use_wandb: Whether to use wandb.
@@ -89,7 +89,7 @@ class SMOO(ABC):
     @staticmethod
     def _get_time_seed() -> int:
         """
-        A simple function ot make a seed from the current timestamp.
+        A simple function to generate a seed from the current timestamp.
 
         :returns: A seed based on the timestamp.
         """
@@ -99,7 +99,7 @@ class SMOO(ABC):
     @staticmethod
     def _assure_rgb(image: Tensor) -> Tensor:
         """
-        Assure that image is or can be converted to RGB.
+        Assure that an image is or can be converted to RGB.
 
         :param image: The image to be converted.
         :returns: The converted image (3 x H x W).
