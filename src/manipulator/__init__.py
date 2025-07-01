@@ -1,12 +1,24 @@
 """A package for latent space manipulators and auxiliary elements."""
 
 from ._manipulator import Manipulator  # isort: skip
-from ._diffusion_manipulator import (
-    DiffusionCandidate,
-    DiffusionCandidateList,
-    REPAEManipulator,
-)
-from ._style_gan_manipulator import MixCandidate, MixCandidateList, StyleGANManipulator
+
+try:
+    from ._diffusion_manipulator import (
+        DiffusionCandidate,
+        DiffusionCandidateList,
+        REPAEManipulator,
+    )
+except:
+    pass
+
+try:
+    from ._style_gan_manipulator import (
+        MixCandidate,
+        MixCandidateList,
+        StyleGANManipulator,
+    )
+except:
+    pass
 
 __all__ = [
     "Manipulator",

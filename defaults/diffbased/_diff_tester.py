@@ -12,11 +12,11 @@ from typing import Optional, Union
 import numpy as np
 import pandas as pd
 import torch
-import wandb
 from numpy.typing import NDArray
 from PIL import Image
 from torch import Tensor
 
+import wandb
 from src import SMOO, TEarlyTermCallable
 from src.manipulator import DiffusionCandidate, DiffusionCandidateList, REPAEManipulator
 from src.objectives import CriterionCollection

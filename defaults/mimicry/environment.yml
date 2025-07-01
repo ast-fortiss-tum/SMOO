@@ -1,0 +1,57 @@
+name: mimicry
+channels:
+  - defaults
+  - conda-forge
+  - pytorch
+  - nvidia/label/cuda-12.4.0
+dependencies:
+  - python==3.9
+  - blobfile==3.0.0
+  - cuda-toolkit #cudatoolkit-dev==11.1.1  # Can be substituted with nvidia/label/cuda-xx.x.x::cuda-toolkit if newer version is required.
+  - cxx-compiler==1.2.0
+  - deap==1.4.1
+  - einops==0.8.0
+  - h5py==3.12.1
+  - imageio==2.9.0
+  - kornia==0.5.8
+  - libllvm10==10.0.1
+  - libuv==1.48.0
+  - matplotlib==3.4.2
+  - mpi4py==4.0.3
+  - notebook==6.5.7
+  - omegaconf==2.3.0
+  - openai-clip==1.0.1
+  - pymoo==0.6.1.3
+  - pytorch-lightning==1.8.6
+  - safetensors==0.4.0
+  - scikit-learn==1.5.2
+  - statsmodels==0.14.1
+  - swifter==1.4.0
+  - tbb==2020.3
+  - timm==0.4.12
+  - torchinfo==1.8.0
+  - wandb==0.13.5
+
+  - pip:
+    - black==25.1.0
+    - darglint==1.8.1
+    - glfw==2.2.0
+    - imageio-ffmpeg==0.4.3
+    - imgui==1.3.0
+    - isort==6.0.0
+    - llvmlite==0.43.0
+    - mypy-extensions==1.0.0
+    - numba==0.60.0
+    - numpy==1.22.4
+    - pathspec==0.12.1
+    - prdc==0.2
+    - pyflakes==3.2.0
+    - pyopengl==3.1.5
+    - pyspng==0.1.2
+    - runipy==0.1.5
+    - sewar==0.4.6
+    - taming-transformers==0.0.1
+
+variables:
+  CUDA_HOME: ~/miniconda3/envs/mimicry/pkgs/cuda-toolkit/
+prefix: ~/miniconda3/envs/mimicry

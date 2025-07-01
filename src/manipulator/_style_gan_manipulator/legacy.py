@@ -88,7 +88,7 @@ class _LegacyUnpickler(pickle.Unpickler):
         if module == "dnnlib.tflib.network" and name == "Network":
             return _TFNetworkStub
         elif module == "torch.storage" and name == "_load_from_bytes":  # Addition from StyleGAN-XL
-            return lambda b: torch.load(io.BytesIO(b), map_location="cpu")
+            return lambda b: torch.load(io.BytesIO(b), map_location="cpu", weights_only=False)
         return super().find_class(module, name)
 
 

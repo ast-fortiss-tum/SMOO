@@ -7,16 +7,16 @@ from typing import Optional
 
 import numpy as np
 import torch
-import wandb
 from numpy.typing import NDArray
 from torch import Tensor
-from wandb import UsageError
 
-from src import SMOO
+import wandb
+from src import SMOO, TEarlyTermCallable
 from src.manipulator import MixCandidate, MixCandidateList, StyleGANManipulator
-from src.objectives import Criterion
+from src.objectives import CriterionCollection
 from src.optimizer import Optimizer
 from src.sut import ClassifierSUT
+from wandb import UsageError
 
 from ._default_df import DefaultDF
 from ._experiment_config import ExperimentConfig
@@ -41,13 +41,15 @@ class MimicryTester(SMOO):
         sut: ClassifierSUT,
         manipulator: StyleGANManipulator,
         optimizer: Optimizer,
-        objectives: list[Criterion],
+        objectives: CriterionCollection,
         config: ExperimentConfig,
         frontier_pairs: bool,
         num_w0: int = 1,
         num_ws: int = 1,
         silent_wandb: bool = False,
         restrict_classes: Optional[list[int]] = None,
+        early_termination: Optional[TEarlyTermCallable] = None,
+        use_wandb: bool = True,
     ):
         """
         Initialize the Neural Tester.
@@ -62,6 +64,8 @@ class MimicryTester(SMOO):
         :param num_ws: The number of target seeds.
         :param silent_wandb: Whether to silence wandb.
         :param restrict_classes: What classes to restrict to.
+        :param early_termination: An optional early termination function.
+        :param use_wandb: If logging is done using wandb.
         """
         super().__init__(
             sut=sut,
@@ -69,7 +73,7 @@ class MimicryTester(SMOO):
             optimizer=optimizer,
             objectives=objectives,
             restrict_classes=restrict_classes,
-            use_wandb=True,
+            use_wandb=use_wandb,
         )
 
         self._num_w0 = num_w0
@@ -78,6 +82,8 @@ class MimicryTester(SMOO):
 
         self._silent = silent_wandb
         self._df = DefaultDF(pairs=frontier_pairs, additional_fields=["genome"])
+        self._early_termination = early_termination or (lambda _: (False, None))
+        self._term_early: bool = False
 
     def test(self, validity_domain: bool = False) -> None:
         """
@@ -96,23 +102,22 @@ class MimicryTester(SMOO):
 
             iter_start = datetime.now()
             w0_tensors, w0_images, w0_ys, w0_trials = self._generate_seeds(self._num_w0, class_idx)
+            self._maybe_summary("w0_trials", w0_trials)
 
             """
             Now we select primary and secondary predictions for further style mixing.
             Note this can be extended to any n predictions, but for this approach we limited it to 2.
             Additionally this can be generalized to N w0 vectors, but now we only consider one.
             """
-            _, second, *_ = torch.argsort(w0_ys[0], descending=True)[0]
+            _, second, *_ = torch.argsort(w0_ys, descending=True)[0]
             self._img_rgb = w0_images[0]
+            self._maybe_log({"base_image": wandb.Image(self._img_rgb[0], caption="Base Image")})
 
             wn_tensors, wn_images, wn_ys, wn_trials = (
                 self._generate_noise(self._num_ws)
                 if validity_domain
                 else self._generate_seeds(self._num_ws, second)
             )
-
-            self._maybe_log({"base_image": wandb.Image(self._img_rgb, caption="Base Image")})
-            self._maybe_summary("w0_trials", wn_trials)
             self._maybe_summary("wn_trials", wn_trials)
 
             """
@@ -129,13 +134,16 @@ class MimicryTester(SMOO):
             logging.info(f"Running Search-Algorithm for {self._config.generations} generations.")
             for _ in range(self._config.generations):
                 # We define the inner loop with its parameters.
-                images, fitness, preds = self._inner_loop(candidates, class_idx, second)
+                images, fitness, preds, term_cond = self._inner_loop(candidates, class_idx, second.item())
+                self._optimizer.assign_fitness(fitness, [images[i] for i in range(images.shape[0])], preds.tolist())
+                if self._term_early:
+                    break
                 # Assign fitness and additional data (in our case images) to the current population.
-                self._optimizer.assign_fitness(fitness, images, preds.tolist())
                 self._optimizer.new_population()
             # Evaluate the last generation.
-            images, fitness, preds = self._inner_loop(candidates, class_idx, second)
-            self._optimizer.assign_fitness(fitness, images, preds.tolist())
+            if not self._term_early:
+                images, fitness, preds, term_cond = self._inner_loop(candidates, class_idx, second.item())
+                self._optimizer.assign_fitness(fitness, [images[i] for i in range(images.shape[0])], preds.tolist())
 
             logging.info(
                 f"\tBest candidate(s) have a fitness of: {', '.join([str(c.fitness) for c in self._optimizer.best_candidates])}"
@@ -143,16 +151,14 @@ class MimicryTester(SMOO):
             self._maybe_summary("expected_boundary", second.item())
             wnb_results = {
                 "best_candidates": wandb.Table(
-                    columns=[metric.name for metric in self._objectives]
+                    columns=self._objectives.names
                     + [f"Genome_{i}" for i in range(self._optimizer.n_var)]
-                    + ["Image"]
-                    + [f"Conf_{i}" for i in self._restrict_classes],
+                    + ["Image"],
                     data=[
                         [
                             *c.fitness,
                             *c.solution,
                             wandb.Image(c.data[0]),
-                            *[c.data[1][i] for i in self._restrict_classes],
                         ]
                         for c in self._optimizer.best_candidates
                     ],
@@ -160,17 +166,33 @@ class MimicryTester(SMOO):
             }
             self._maybe_log(wnb_results)
 
-            Xp, yp = self._optimizer.best_candidates[0].data
-            genome = self._optimizer.best_candidates[0].solution
-            results = [
-                self._img_rgb.tolist(),
-                w0_ys[0].tolist(),
-                Xp.tolist(),
-                yp,
-                datetime.now() - iter_start,
-                genome,
-            ]
-            self._df.append_row(results)
+            if not self._term_early:
+                Xp, yp = self._optimizer.best_candidates[0].data
+                genome = self._optimizer.best_candidates[0].solution
+                results = [
+                    self._img_rgb.tolist(),
+                    w0_ys[0].tolist(),
+                    Xp.tolist(),
+                    yp,
+                    datetime.now() - iter_start,
+                    genome,
+                ]
+                self._df.append_row(results)
+            else:
+                indices = np.arange(term_cond.shape[0])[term_cond]
+                runtime = datetime.now() - iter_start
+                x_cur = self._optimizer.get_x_current()
+                for ind in indices:
+                    results = [
+                        self._img_rgb.tolist(),
+                        w0_ys[0].tolist(),
+                        images[ind].tolist(),
+                        preds[ind].tolist(),
+                        runtime,
+                        x_cur[ind],
+                    ]
+                    self._df.append_row(results)
+
             self._optimizer.reset()  # Reset the learner to have clean slate in next iteration.
             logging.info("\tReset learner!")
 
@@ -183,7 +205,7 @@ class MimicryTester(SMOO):
         candidates: MixCandidateList,
         c1: int,
         c2: int,
-    ) -> tuple[list[Tensor], tuple[NDArray, ...], Tensor]:
+    ) -> tuple[Tensor, tuple[NDArray, ...], Tensor, Optional[NDArray]]:
         """
         The inner loop for the learner.
 
@@ -199,60 +221,56 @@ class MimicryTester(SMOO):
             0 <= sm_cond_arr.max() < self._num_ws
         ), f"Error: StyleMixing Conditions reference indices of {sm_cond_arr.max()}, but we only have {self._num_ws} elements."
 
-        images = []
-        for sm_cond, sm_weights in zip(sm_cond_arr, sm_weights_arr):
-            mixed_image = self._manipulator.manipulate(
-                candidates=candidates,
-                cond=sm_cond,
-                weights=sm_weights,
-                random_seed=self._get_time_seed(),
-            )
-            images.append(mixed_image)
-        # Convert images to RGB if they are grayscale
-        images = [self._assure_rgb(img) for img in images]
+        # Generate all images in batch
+        batch_images = self._manipulator.manipulate(
+            candidates=candidates,
+            cond=sm_cond_arr,
+            weights=sm_weights_arr,
+        )
+
+        # Convert to batched tensor and ensure RGB
+        images_tensor  = self._assure_rgb(batch_images)
 
         """We predict the label from the mixed images."""
-        predictions: Tensor = self._process(torch.stack(images))
+        predictions: Tensor = self._process(images_tensor)
 
-        # TODO: maybe have candidates be the input for criterion evaluation.
-        fitness = []
-        for j, (Xp, yp) in enumerate(zip(images, predictions)):
-            sol_arch = [i for i in images if not torch.equal(i, Xp)]
-            gen_arch = [e for k, e in enumerate(sm_weights_arr) if k != j]
-            im, lt, gt = [self._img_rgb, Xp], [c1, c2], sm_weights_arr[j]
+        # Create origin batch for comparison
+        origin_batch = self._img_rgb.expand(
+            images_tensor.shape[0], *self._img_rgb.shape[1:]
+        )
 
-            fitness.append(
-                [
-                    criterion.evaluate(
-                        images=im,
-                        logits=yp,
-                        label_targets=lt,
-                        genome_target=gt,
-                        solution_archive=sol_arch,
-                        genome_archive=gen_arch,
-                    )
-                    for criterion in self._objectives
-                ]
-            )
-        fitness = tuple(map(np.array, zip(*fitness)))
-
-        # Logging Operations
-        results = {}
-        # Log statistics for each objective function seperately.
-        for metric, obj in zip(self._objectives, fitness):
-            results |= {
-                f"min_{metric.name}": obj.min(),
-                f"max_{metric.name}": obj.max(),
-                f"mean_{metric.name}": obj.mean(),
-                f"std_{metric.name}": obj.std(),
+        self._objectives.evaluate_all(
+            {
+                "images": [origin_batch, images_tensor],
+                "logits": predictions,
+                "label_targets": [c1, c2],
+                "solution_archive": [],
+                "batch_dim": 0,
             }
-        self._maybe_log(results)
+        )
+        results = self._objectives.results
+        fitness = tuple(np.asarray(f) for f in results.values())
 
-        return images, fitness, predictions
+        early_term, term_cond = self._early_termination(results)
+        self._term_early = early_term
+        if early_term:
+            logging.info(f"Early termination condition met by: {term_cond.sum()} individuals")
+
+        # Log statistics for each objective function separately.
+        log_results = {}
+        for name, obj in results.items():
+            log_results |= {
+                f"min_{name}": np.min(obj),
+                f"max_{name}": np.max(obj),
+                f"mean_{name}": np.mean(obj),
+                f"std_{name}": np.std(obj),
+            }
+        self._maybe_log(log_results)
+        return images_tensor, fitness, predictions, term_cond
 
     def _generate_seeds(
         self, amount: int, cls: int
-    ) -> tuple[list[Tensor], list[Tensor], list[Tensor], int]:
+    ) -> tuple[Tensor, Tensor, Tensor, int]:
         """
         Generate seeds for a specific class.
 
@@ -272,9 +290,9 @@ class MimicryTester(SMOO):
             # We generate w latent vector.
             w = self._manipulator.get_w(self._get_time_seed(), cls)
             # We generate and transform the image to RGB if it is in Grayscale.
-            img = self._manipulator.get_image(w)
+            img = self._manipulator.get_images(w)
             img = self._assure_rgb(img)
-            y_hat = self._process(img.unsqueeze(0))
+            y_hat = self._process(img)
 
             # We are only interested in a candidate if the prediction matches the label.
             if y_hat.argmax() == cls:
@@ -282,9 +300,15 @@ class MimicryTester(SMOO):
                 imgs.append(img)
                 y_hats.append(y_hat)
         logging.info(f"\tFound {amount} valid seed(s) after: {trials} iterations.")
-        return ws, imgs, y_hats, trials
+        
+        # Convert lists to batched tensors
+        ws_tensor = torch.stack(ws)
+        images_tensor = torch.stack(imgs)
+        y_hats_tensor = torch.cat(y_hats)
+        
+        return ws_tensor, images_tensor, y_hats_tensor, trials
 
-    def _generate_noise(self, amount: int) -> tuple[list[Tensor], list[Tensor], list[Tensor], int]:
+    def _generate_noise(self, amount: int) -> tuple[Tensor, Tensor, Tensor, int]:
         """
         Generate noise.
 
@@ -294,12 +318,12 @@ class MimicryTester(SMOO):
         logging.info("Generate noise seeds.")
         # For logging purposes to see how many samples we need to find valid seed.
         w: Tensor = self._manipulator.get_w(self._get_time_seed(), 0)
-        ws = [torch.randn(w.size(), device=w.device) for _ in range(amount)]
-        imgs = [self._assure_rgb(self._manipulator.get_image(w)) for w in ws]
-        y_hats = [self._process(img.unsqueeze(0)) for img in imgs]
+        ws = torch.randn((amount, *w.shape), device=w.device)
+        images = self._assure_rgb(self._manipulator.get_images(ws))
+        y_hats = self._process(images)
 
         logging.info(f"\tFound {amount} valid seed(s).")
-        return ws, imgs, y_hats, 0
+        return ws, images, y_hats, 0
 
     def _init_wandb(self, exp_start: datetime, class_idx: int, silent: bool) -> None:
         """
