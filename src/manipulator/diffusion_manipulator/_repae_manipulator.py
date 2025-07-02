@@ -1,15 +1,15 @@
 import gc
 import logging
-from typing import Callable, Union, Optional
+from typing import Callable, Optional, Union
 
 import torch
 from torch import Tensor, nn
 
-from ._diffusion_candidate import DiffusionCandidateList
-from .repae.models.autoencoder import vae_models
-from .repae.models.sit import SiT_models
-from .repae.utils import load_encoders
 from .. import Manipulator
+from ._diffusion_candidate import DiffusionCandidateList
+from ._internal.models.autoencoder import vae_models
+from ._internal.models.sit import SiT_models
+from ._internal.utils import load_encoders
 
 
 class REPAEManipulator(Manipulator):
@@ -69,6 +69,7 @@ class REPAEManipulator(Manipulator):
         :param interpolation_strategy: Interpolation strategy to use.
         :param device: CUDA device to use if available.
         :raises ValueError: If manipulation_strategy is not supported.
+        :raises NotImplementedError: If VAE type is not supported.
         """
         self._prepare_cuda(device)
         self._batch_size = batch_size
@@ -403,8 +404,12 @@ class REPAEManipulator(Manipulator):
                 torch.cuda.empty_cache()
         return torch.cat(decoded, dim=0)
 
-    def _prepare_cuda(self, device: Union[torch.device, None]) -> None:
-        """Prepare optimized CUDA environment."""
+    def _prepare_cuda(self, device: Optional[torch.device]) -> None:
+        """
+        Prepare optimized CUDA environment.
+
+        :param device: The torch device to use if applicable.
+        """
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
@@ -444,7 +449,7 @@ class REPAEManipulator(Manipulator):
         :param weight: The weight for the interpolation.
         :param dim: The dimensions to do operations across.
         :return: The interpolated tensor.
-        :raises: ValueError if interpolation strategy is not known.
+        :raises ValueError: if interpolation strategy is not known.
         """
         if weight.ndim == 0:
             weight = weight.view(1)

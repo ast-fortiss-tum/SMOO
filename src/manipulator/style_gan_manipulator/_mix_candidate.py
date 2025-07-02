@@ -37,6 +37,7 @@ class MixCandidateList(CandidateList):
         Initialize the MixCandidateList.
 
         :param initial_candidates: the initial candidates for the list.
+        :raises KeyError: If the w_index is not set correctly.
         """
         super().__init__(*initial_candidates)
         """If there are elements that have no index in the original collection we assign them to ensure persistent order."""
@@ -71,7 +72,7 @@ class MixCandidateList(CandidateList):
         return self._w_indices
 
     @property
-    def w_tensors(self) -> list[torch.Tensor | None]:
+    def w_tensors(self) -> list[Optional[torch.Tensor]]:
         return self._w_tensors
 
     @property

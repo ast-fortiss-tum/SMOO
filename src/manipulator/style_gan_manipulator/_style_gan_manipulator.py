@@ -1,16 +1,15 @@
 from typing import Union
 
 import numpy as np
-from numpy.typing import NDArray
 import torch
+from numpy.typing import NDArray
 from torch import Tensor
 
-from ._mix_candidate import MixCandidateList
-
 from .._manipulator import Manipulator
-from . import dnnlib
+from ._internal import dnnlib
+from ._internal.torch_utils.ops import upfirdn2d
 from ._load_stylegan import load_stylegan
-from .torch_utils.ops import upfirdn2d
+from ._mix_candidate import MixCandidateList
 
 
 class StyleGANManipulator(Manipulator):
@@ -51,6 +50,7 @@ class StyleGANManipulator(Manipulator):
         :param noise_mode: The noise mode to be used for generation (const, random).
         :param interpolate: Whether to interpolate style layers or mix.
         :param conditional: Whether to use conditional generation.
+        :param batch_size: The maximum batch size used to generate images.
         :raises ValueError: If `manipulation_mode` or `noise_mode` is not supported.
         """
         """Set constants."""

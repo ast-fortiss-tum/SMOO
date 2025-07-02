@@ -15,7 +15,11 @@ from numpy.typing import NDArray
 from torch import Tensor
 
 from src import SMOO, TEarlyTermCallable
-from src.manipulator import DiffusionCandidate, DiffusionCandidateList, REPAEManipulator
+from src.manipulator.diffusion_manipulator import (
+    DiffusionCandidate,
+    DiffusionCandidateList,
+    REPAEManipulator,
+)
 from src.objectives import CriterionCollection
 from src.optimizer import Optimizer, PymooOptimizer
 from src.sut import ClassifierSUT

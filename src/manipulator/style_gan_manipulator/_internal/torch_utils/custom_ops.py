@@ -16,7 +16,6 @@ import uuid
 
 import torch
 import torch.utils.cpp_extension
-from torch.utils.file_baton import FileBaton
 
 # ----------------------------------------------------------------------------
 # Global options.

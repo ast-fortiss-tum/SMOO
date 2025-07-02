@@ -19,14 +19,9 @@ import click
 import numpy as np
 import torch
 
-try:
-    from .dnnlib import EasyDict
-    from .dnnlib.util import open_url
-    from .torch_utils import misc
-except ImportError as e:
-    from dnnlib import EasyDict
-    from dnnlib.util import open_url
-    from torch_utils import misc
+from .dnnlib import EasyDict
+from .dnnlib.util import open_url
+from .torch_utils import misc
 
 
 # ----------------------------------------------------------------------------

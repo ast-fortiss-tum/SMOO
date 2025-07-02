@@ -14,7 +14,11 @@ from numpy.typing import NDArray
 from torch import Tensor
 
 from src import SMOO, TEarlyTermCallable
-from src.manipulator import MixCandidate, MixCandidateList, StyleGANManipulator
+from src.manipulator.style_gan_manipulator import (
+    MixCandidate,
+    MixCandidateList,
+    StyleGANManipulator,
+)
 from src.objectives import CriterionCollection
 from src.optimizer import Optimizer
 from src.sut import ClassifierSUT

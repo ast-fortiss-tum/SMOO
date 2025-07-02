@@ -13,7 +13,10 @@ import warnings
 import numpy as np
 import torch
 
-from src.manipulator._style_gan_manipulator import dnnlib
+try:
+    from .. import dnnlib
+except ImportError:
+    import src.manipulator.style_gan_manipulator._internal.dnnlib as dnnlib
 
 # ----------------------------------------------------------------------------
 # Cached construction of constant tensors. Avoids CPU=>GPU copy when the

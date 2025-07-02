@@ -14,12 +14,9 @@ import numpy as np
 import torch
 
 try:
-    from src.manipulator._style_gan_manipulator import dnnlib
+    from ... import dnnlib
 except ImportError:
-    try:
-        import src.manipulator._style_gan_manipulator.dnnlib
-    except ImportError as e:
-        raise e
+    from src.manipulator.style_gan_manipulator._internal import dnnlib
 
 from .. import custom_ops, misc
 
