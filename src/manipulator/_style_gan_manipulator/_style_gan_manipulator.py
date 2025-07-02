@@ -1,7 +1,6 @@
 from typing import Union
 
 import numpy as np
-from networkx.algorithms.threshold import weights_to_creation_sequence
 from numpy.typing import NDArray
 import torch
 from torch import Tensor
@@ -41,6 +40,7 @@ class StyleGANManipulator(Manipulator):
         interpolate: bool = True,
         noise_mode: str = "random",
         conditional: bool = True,
+        batch_size: int = 0,
     ) -> None:
         """
         Initialize the StyleMixer object.
@@ -73,6 +73,7 @@ class StyleGANManipulator(Manipulator):
             self._generator.synthesis.input, "transform"
         )
         self._conditional = conditional
+        self._batch_size = batch_size
 
     def manipulate(
         self,
@@ -162,11 +163,16 @@ class StyleGANManipulator(Manipulator):
         :param w: The w vector for generation (batch x w_dim).
         :returns: The generated image (batch x img_dim).
         """
-        out, _ = self._run_synthesis_net(
-            self._generator.synthesis, w, noise_mode=self._noise_mode, force_fp32=False
-        )
-        imgs = self._transform_images_output(out)
-        return imgs
+        all_imgs = []
+        for i in range(0, w.shape[0], self._batch_size or w.shape[0]):
+            w_batch = w[i : i + self._batch_size]
+            out, _ = self._run_synthesis_net(
+                self._generator.synthesis, w_batch, noise_mode=self._noise_mode, force_fp32=False
+            )
+            imgs = self._transform_images_output(out)
+            all_imgs.append(imgs)
+
+        return torch.cat(all_imgs, dim=0)
 
     @staticmethod
     def _transform_images_output(images: Tensor, full_range: bool = False) -> Tensor:

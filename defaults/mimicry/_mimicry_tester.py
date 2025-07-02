@@ -222,40 +222,8 @@ class MimicryTester(SMOO):
                 f"\tBest candidate(s) have a fitness of: {', '.join([str(c.fitness) for c in self._optimizer.best_candidates])}"
             )
 
-            # Keep the original DataFrame logging for backwards compatibility
-            if not self._term_early:
-                Xp, yp = self._optimizer.best_candidates[0].data
-                genome = self._optimizer.best_candidates[0].solution
-                results = [
-                    self._img_rgb.tolist(),
-                    w0_ys[0].tolist(),
-                    Xp.tolist(),
-                    yp,
-                    time() - start_time,
-                    genome,
-                ]
-                self._df.append_row(results)
-            else:
-                indices = np.arange(term_cond.shape[0])[term_cond]
-                runtime = time() - start_time
-                x_cur = self._optimizer.get_x_current()
-                for ind in indices:
-                    results = [
-                        self._img_rgb.tolist(),
-                        w0_ys[0].tolist(),
-                        images[ind].tolist(),
-                        preds[ind].tolist(),
-                        runtime,
-                        x_cur[ind],
-                    ]
-                    self._df.append_row(results)
-
             self._optimizer.reset()  # Reset the learner to have clean slate in next iteration.
             logging.info("\tReset learner!")
-
-        logging.info("Saving Experiments to DF")
-        if self._config.save_to is not None:
-            self._df.to_csv(f"{self._config.save_to}.csv", index=False)
 
     def _inner_loop(
         self,
