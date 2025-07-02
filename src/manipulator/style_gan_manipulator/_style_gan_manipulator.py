@@ -146,9 +146,9 @@ class StyleGANManipulator(Manipulator):
         # Generate latent vectors
         z = torch.randn(size=[batch_size, self._generator.z_dim], device=self._device)
         # Set class conditional vector, if conditional sampling is used.
-        if self._conditional:
+        if self._generator.c_dim != 0:
             c = torch.zeros(size=[batch_size, self._generator.c_dim], device=self._device)
-            c[:, class_idx] = 1
+            c[:, class_idx] = 1 if self._conditional else 0
         else:
             c = None
         w = self._generator.mapping(
@@ -164,8 +164,9 @@ class StyleGANManipulator(Manipulator):
         :returns: The generated image (batch x img_dim).
         """
         all_imgs = []
-        for i in range(0, w.shape[0], self._batch_size or w.shape[0]):
-            w_batch = w[i : i + self._batch_size]
+        batch_size = self._batch_size or w.shape[0]
+        for i in range(0, w.shape[0], batch_size):
+            w_batch = w[i : i + batch_size]
             out, _ = self._run_synthesis_net(
                 self._generator.synthesis, w_batch, noise_mode=self._noise_mode, force_fp32=False
             )

@@ -21,7 +21,7 @@ from src.manipulator.style_gan_manipulator import (
 )
 from src.objectives import CriterionCollection
 from src.optimizer import Optimizer
-from src.sut import ClassifierSUT
+from src.sut import SUT
 
 from ._default_df import DefaultDF
 from ._experiment_config import ExperimentConfig
@@ -43,7 +43,7 @@ class MimicryTester(SMOO):
     def __init__(
         self,
         *,
-        sut: ClassifierSUT,
+        sut: SUT,
         manipulator: StyleGANManipulator,
         optimizer: Optimizer,
         objectives: CriterionCollection,

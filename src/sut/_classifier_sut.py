@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Optional
 
 import torch
 from torch import Tensor, nn, no_grad
@@ -22,7 +22,7 @@ class ClassifierSUT(SUT):
         apply_softmax: bool = False,
         use_mcd: bool = False,
         batch_size: int = 0,
-        device: Union[torch.device, None] = None,
+        device: Optional[torch.device] = None,
     ) -> None:
         """
         Initialize the classifier SUT.
