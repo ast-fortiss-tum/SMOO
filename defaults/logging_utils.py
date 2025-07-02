@@ -54,3 +54,16 @@ def get_default_handler() -> logging.Handler:
         )
     )
     return handler
+
+
+def setup_logging() -> logging.Logger:
+    """
+    Setup logging in a script.
+
+    :returns: The logger.
+    """
+    logger = logging.getLogger()
+    logger.setLevel(level=logging.INFO)
+    logger.addHandler(get_default_handler())
+    logger.addFilter(ContextFilter())
+    return logger

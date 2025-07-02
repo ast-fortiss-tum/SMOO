@@ -1,22 +1,19 @@
 from __future__ import annotations
 
-import gc
 import json
 import logging
 import os
 from dataclasses import dataclass
 from itertools import product
 from time import time
-from typing import Optional, Union
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 import torch
 from numpy.typing import NDArray
-from PIL import Image
 from torch import Tensor
 
-import wandb
 from src import SMOO, TEarlyTermCallable
 from src.manipulator import DiffusionCandidate, DiffusionCandidateList, REPAEManipulator
 from src.objectives import CriterionCollection
@@ -43,7 +40,6 @@ class DiffTester(SMOO):
         objectives: CriterionCollection,
         config: ExperimentConfig,
         early_termination: TEarlyTermCallable,
-        use_wandb: bool = True,
     ):
         """
         Initialize the Diffusion Tester.
@@ -54,7 +50,6 @@ class DiffTester(SMOO):
         :param objectives: The objectives used for fitness calculation.
         :param config: The experiment config.
         :param early_termination: An optional early termination function.
-        :param use_wandb: Whether to use wandb for logging.
         """
         super().__init__(
             sut=sut,
@@ -62,7 +57,7 @@ class DiffTester(SMOO):
             optimizer=optimizer,
             objectives=objectives,
             restrict_classes=config.restrict_classes,
-            use_wandb=use_wandb,
+            use_wandb=False,
             early_termination=early_termination,
         )
         self._config = config
@@ -272,54 +267,6 @@ class DiffTester(SMOO):
             )
         candidate = DiffusionCandidate(xt.squeeze(), emb, is_origin=is_origin)
         return candidate, y_hat, image
-
-    def _init_wandb(self, exp_start: str, class_idx: int, silent: bool) -> None:
-        """
-        Initialize Wandb Run for logging
-
-        :param exp_start: The start of the experiment (for grouping purposes).
-        :param class_idx: The class index to search boundary candidates for.
-        :param silent: Whether wandb should be silenced.
-        """
-        if self._use_wandb:
-            try:
-                wandb.init(
-                    project="DiffManip",
-                    config={
-                        "experiment_start": exp_start,
-                        "label": class_idx,
-                        "learner_type": self._optimizer.optimizer_type,
-                    },
-                    settings=wandb.Settings(
-                        silent=silent,
-                        _disable_stats=True,
-                        _disable_meta=True,
-                    ),
-                    reinit=True,
-                    mode="online",
-                )
-
-            except wandb.errors.UsageError as e:
-                logging.error(f"Raised error {e}, \n continuing...")
-
-    @staticmethod
-    def _cleanup() -> None:
-        """Cleanup memory stuff."""
-        gc.collect()
-        torch.cuda.empty_cache()
-
-    @staticmethod
-    def _save_tensor_as_image(tensor: Union[NDArray, Tensor], path: str) -> None:
-        """
-        Save a torch tensor [0,1] as an image.
-
-        :param tensor: The tensor to save.
-        :param path: The directory to save the image to.
-        """
-        array = tensor.cpu().numpy() if isinstance(tensor, torch.Tensor) else tensor
-        image = array.squeeze().transpose(1, 2, 0)  # C x H x W  -> H x W x C
-        image = (image * 255).astype(np.uint8)  # [0,1] -> [0, 255]
-        Image.fromarray(image).save(path)
 
 
 @dataclass

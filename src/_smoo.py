@@ -1,11 +1,14 @@
+import gc
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
+import numpy as np
+import torch
+from numpy.typing import NDArray
+from PIL import Image
 from torch import Tensor
-
-import wandb
 
 from .manipulator import Manipulator
 from .objectives import CriterionCollection
@@ -64,30 +67,24 @@ class SMOO(ABC):
         """Every workflow needs a testing loop."""
         ...
 
-    def _maybe_log(self, results: dict) -> None:
-        """
-        Logs to Wandb if initialized.
+    @staticmethod
+    def _cleanup() -> None:
+        """Cleanup memory stuff."""
+        gc.collect()
+        torch.cuda.empty_cache()
 
-        :param results: The results to log.
+    @staticmethod
+    def _save_tensor_as_image(tensor: Union[NDArray, Tensor], path: str) -> None:
         """
-        if self._use_wandb:
-            try:
-                wandb.log(results)
-            except wandb.errors.Error as e:
-                logging.error(e)
+        Save a torch tensor [0,1] as an image.
 
-    def _maybe_summary(self, field: str, summary: Any) -> None:
+        :param tensor: The tensor to save.
+        :param path: The directory to save the image to.
         """
-        Add elements to wandb Summary if initialized.
-
-        :param field: The field to add an element to.
-        :param summary: The element to add.
-        """
-        if self._use_wandb:
-            try:
-                wandb.summary[field] = summary
-            except wandb.errors.Error as e:
-                logging.error(e)
+        array = tensor.cpu().numpy() if isinstance(tensor, torch.Tensor) else tensor
+        image = array.squeeze().transpose(1, 2, 0)  # C x H x W  -> H x W x C
+        image = (image * 255).astype(np.uint8)  # [0,1] -> [0, 255]
+        Image.fromarray(image).save(path)
 
     @staticmethod
     def _get_time_seed() -> int:

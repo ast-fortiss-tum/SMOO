@@ -13,3 +13,4 @@ class ExperimentConfig:
     save_to: Optional[str] = field(
         default=None
     )  # The name of the dataframe to save to, if None don`t save.
+    save_as: str = field(default="mimicry_exp")  # The name identifier for saved experiment files.

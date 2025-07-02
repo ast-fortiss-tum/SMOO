@@ -11,13 +11,13 @@ class CriterionCollection:
     _criteria: list[Criterion]
     _results: TCriterionResults
 
-    def __init__(self, criteria: list[Criterion]) -> None:
+    def __init__(self, *criteria: Criterion) -> None:
         """
         Initialize the collection of criteria.
 
         :param criteria: The criteria to add.
         """
-        self._criteria = criteria
+        self._criteria = list(criteria)
         self._results = dict()
 
     def evaluate_all(self, iargs: dict[str, Any]) -> None:

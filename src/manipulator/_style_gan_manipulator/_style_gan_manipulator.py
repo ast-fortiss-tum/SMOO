@@ -29,6 +29,10 @@ class StyleGANManipulator(Manipulator):
 
     _mix_dims: Tensor  # Range for dimensions to mix styles with.
 
+    """Some default parameters for the generation of w."""
+    trunc_psi: float = 1.0
+    trunc_cutoff: int = 0
+
     def __init__(
         self,
         generator: Union[torch.nn.Module, str],
@@ -36,6 +40,7 @@ class StyleGANManipulator(Manipulator):
         mix_dims: tuple[int, int],
         interpolate: bool = True,
         noise_mode: str = "random",
+        conditional: bool = True,
     ) -> None:
         """
         Initialize the StyleMixer object.
@@ -45,6 +50,7 @@ class StyleGANManipulator(Manipulator):
         :param mix_dims: The w-dimensions to use for mixing (range index).
         :param noise_mode: The noise mode to be used for generation (const, random).
         :param interpolate: Whether to interpolate style layers or mix.
+        :param conditional: Whether to use conditional generation.
         :raises ValueError: If `manipulation_mode` or `noise_mode` is not supported.
         """
         """Set constants."""
@@ -66,7 +72,7 @@ class StyleGANManipulator(Manipulator):
         self._has_input_transform = hasattr(self._generator.synthesis, "input") and hasattr(
             self._generator.synthesis.input, "transform"
         )
-
+        self._conditional = conditional
 
     def manipulate(
         self,
@@ -84,10 +90,12 @@ class StyleGANManipulator(Manipulator):
         :param weights: The weights for manipulating layers (batch x genome_size).
         :returns: The generated image (C x H x W) as a float with range [0, 255].
         """
-        assert cond.shape == weights.shape, \
-            "Error: The manipulation condition and weights have to be of same shape."
-        assert len(self._mix_dims) == len(cond[1]), \
-            f"Error SMX condition array is not the same size as the mix dimensions ({len(self._mix_dims)} vs {len(cond[1])}). This might be due to a mismatch in genome size."
+        assert (
+            cond.shape == weights.shape
+        ), "Error: The manipulation condition and weights have to be of same shape."
+        assert len(self._mix_dims) == len(
+            cond[1]
+        ), f"Error SMX condition array is not the same size as the mix dimensions ({len(self._mix_dims)} vs {len(cond[1])}). This might be due to a mismatch in genome size."
 
         if not self._interpolate:
             weights = weights.astype(np.int_)
@@ -100,7 +108,7 @@ class StyleGANManipulator(Manipulator):
         w_avg = self._generator.mapping.w_avg
         w_avg = w_avg if w_avg.ndim == 1 else w_avg.mean(dim=tuple(range(w_avg.ndim - 1)))
         wn_tensors = torch.vstack(candidates.wn_candidates.w_tensors) - w_avg
-        wn_tensors = wn_tensors.repeat(cond.shape[0], *([1]*(wn_tensors.ndim-1)))
+        wn_tensors = wn_tensors.repeat(cond.shape[0], *([1] * (wn_tensors.ndim - 1)))
 
         """Get w0 vector."""
         w0_weights = (candidates.w0_candidates.weights,)
@@ -118,7 +126,7 @@ class StyleGANManipulator(Manipulator):
         comp1 = wn_tensors[cond, self._mix_dims, :] * weights
         comp2 = w0[:, self._mix_dims] * (1 - weights)
 
-        w[:, self._mix_dims] += (comp1 + comp2)
+        w[:, self._mix_dims] += comp1 + comp2
         w += w_avg
 
         imgs = self.get_images(w)
@@ -137,9 +145,15 @@ class StyleGANManipulator(Manipulator):
 
         # Generate latent vectors
         z = torch.randn(size=[batch_size, self._generator.z_dim], device=self._device)
-        c = torch.zeros(size=[batch_size, self._generator.c_dim], device=self._device)
-        c[:, class_idx] = 1
-        w = self._generator.mapping(z=z, c=c, truncation_psi=1, truncation_cutoff=0)
+        # Set class conditional vector if conditional sampling is used.
+        if self._conditional:
+            c = torch.zeros(size=[batch_size, self._generator.c_dim], device=self._device)
+            c[:, class_idx] = 1
+        else:
+            c = None
+        w = self._generator.mapping(
+            z=z, c=c, truncation_psi=self.trunc_psi, truncation_cutoff=self.trunc_cutoff
+        )
         return w
 
     def get_images(self, w: Tensor) -> Tensor:
@@ -167,7 +181,9 @@ class StyleGANManipulator(Manipulator):
         images = images.to(torch.float32)  # B x C x W x H
         # Normalize color range.
         images /= images.norm(float("inf"), dim=[2, 3], keepdim=True).clip(1e-8, 1e8)
-        images = (images * 127.5 + 128).clamp(0, 255) if full_range else ((images + 1) / 2).clamp(0, 1)
+        images = (
+            (images * 127.5 + 128).clamp(0, 255) if full_range else ((images + 1) / 2).clamp(0, 1)
+        )
         return images
 
     # ------------------ Copied from https://github.com/NVlabs/stylegan3/blob/main/viz/renderer.py -----------------------
