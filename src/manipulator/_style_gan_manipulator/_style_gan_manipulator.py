@@ -142,10 +142,9 @@ class StyleGANManipulator(Manipulator):
         :returns: The w vector.
         """
         torch.manual_seed(seed)
-
         # Generate latent vectors
         z = torch.randn(size=[batch_size, self._generator.z_dim], device=self._device)
-        # Set class conditional vector if conditional sampling is used.
+        # Set class conditional vector, if conditional sampling is used.
         if self._conditional:
             c = torch.zeros(size=[batch_size, self._generator.c_dim], device=self._device)
             c[:, class_idx] = 1

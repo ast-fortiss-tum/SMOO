@@ -88,7 +88,7 @@ class MimicryTester(SMOO):
         :param validity_domain: Whether the validity domain should be tested for.
         """
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        spc, c = self._config.samples_per_class, self._config.classes
+        spc, c, seeds = self._config.samples_per_class, self._config.classes, self._config.seeds
 
         logging.info(
             f"Start testing. Number of classes: {len(c)}, iterations per class: {spc}, total iterations: {len(c)*spc}\n"
@@ -98,7 +98,9 @@ class MimicryTester(SMOO):
             logging.info(f"Test class {class_idx}, sample idx {sample_id}.")
             start_time = time()  # Stores the start time of the current experiment.
 
-            w0_tensors, w0_images, w0_ys, w0_trials = self._generate_seeds(self._num_w0, class_idx)
+            w0_tensors, w0_images, w0_ys, w0_trials = self._generate_seeds(
+                self._num_w0, class_idx, seed=seeds[sample_id]
+            )
 
             """
             Now we select primary and secondary predictions for further style mixing.
@@ -111,8 +113,11 @@ class MimicryTester(SMOO):
             wn_tensors, wn_images, wn_ys, wn_trials = (
                 self._generate_noise(self._num_ws)
                 if validity_domain
-                else self._generate_seeds(self._num_ws, second)
+                else self._generate_seeds(
+                    self._num_ws, -1 if class_idx == -1 else second.item(), exclude=[first.item()]
+                )
             )
+            second, *_ = torch.argsort(wn_ys, descending=True)[0]
 
             """
             Note that the w0s and ws' do not have to share a label, but for this implementation we do not control the labels separately.
@@ -168,7 +173,7 @@ class MimicryTester(SMOO):
 
             """Save data."""
             log_dir = os.path.join(
-                script_dir, f"runs/class_{first.item()}_{self._config.save_as}_{time()}"
+                script_dir, f"runs/{self._config.save_as}_class_{first.item()}_{time()}"
             )
             os.makedirs(log_dir, exist_ok=True)
 
@@ -316,12 +321,20 @@ class MimicryTester(SMOO):
 
         return images_tensor, fitness, predictions, term_cond, gen_data
 
-    def _generate_seeds(self, amount: int, label: int) -> tuple[Tensor, Tensor, Tensor, int]:
+    def _generate_seeds(
+        self,
+        amount: int,
+        label: int,
+        exclude: Optional[list[int]] = None,
+        seed: Optional[int] = None,
+    ) -> tuple[Tensor, Tensor, Tensor, int]:
         """
         Generate seeds for a specific class.
 
         :param amount: The number of seeds to be generated.
         :param label: The class to be generated.
+        :param exclude: A list of classes to exclude.
+        :param seed: A seed to be used for reproducibility.
         :returns: The generated w vectors, the corresponding images, confidence values and the amount of trials needed.
         """
         ws: list[Tensor] = []
@@ -334,14 +347,15 @@ class MimicryTester(SMOO):
         while len(ws) < amount:
             trials += 1
             # We generate w latent vector.
-            w = self._manipulator.get_w(self._get_time_seed(), label)
+            w = self._manipulator.get_w(self._get_time_seed() if seed is None else seed, label)
             # We generate and transform the image to RGB if it is in Grayscale.
             img = self._manipulator.get_images(w)
             img = self._assure_rgb(img)
             y_hat = self._process(img)
 
             # We are only interested in a candidate if the prediction matches the label.
-            if y_hat.argmax() == label or label == -1:
+            exclude_cond = y_hat.argmax().item() not in exclude if exclude is not None else True
+            if (y_hat.argmax().item() == label) or (label == -1) and exclude_cond:
                 ws.append(w)
                 imgs.append(img)
                 y_hats.append(y_hat)
