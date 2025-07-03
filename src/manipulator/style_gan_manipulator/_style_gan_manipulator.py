@@ -49,7 +49,7 @@ class StyleGANManipulator(Manipulator):
         :param mix_dims: The w-dimensions to use for mixing (range index).
         :param noise_mode: The noise mode to be used for generation (const, random).
         :param interpolate: Whether to interpolate style layers or mix.
-        :param conditional: Whether to use conditional generation.
+        :param conditional: Whether to use conditional generation (only available for models trained with conditions).
         :param batch_size: The maximum batch size used to generate images.
         :raises ValueError: If `manipulation_mode` or `noise_mode` is not supported.
         """
@@ -145,7 +145,7 @@ class StyleGANManipulator(Manipulator):
         torch.manual_seed(seed)
         # Generate latent vectors
         z = torch.randn(size=[batch_size, self._generator.z_dim], device=self._device)
-        # Set class conditional vector, if conditional sampling is used.
+        # Set class conditional vector, if conditional sampling is used and allowed.
         if self._generator.c_dim != 0:
             c = torch.zeros(size=[batch_size, self._generator.c_dim], device=self._device)
             c[:, class_idx] = 1 if self._conditional else 0

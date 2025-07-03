@@ -109,7 +109,6 @@ class MimicryTester(SMOO):
             w0_tensors, w0_images, w0_ys, w0_trials = self._generate_seeds(
                 self._num_w0, class_idx, seed=seeds[sample_id]
             )
-
             """
             Now we select primary and secondary predictions for further style mixing.
             Note this can be extended to any n predictions, but for this approach we limited it to 2.
@@ -128,7 +127,6 @@ class MimicryTester(SMOO):
                 )
             )
             second, *_ = torch.argsort(wn_ys, descending=True)[0]
-
             """
             Note that the w0s and ws' do not have to share a label, but for this implementation we do not control the labels separately.
             """
@@ -199,10 +197,11 @@ class MimicryTester(SMOO):
                 "w0_predictions": w0_ys.cpu().squeeze().tolist(),
                 "wn_predictions": wn_ys.cpu().squeeze().tolist(),
                 "budget_used": budget_used,
-                "expected_boundary": second.item(),
+                "expected_target": second.item(),
+                "seed": seeds[sample_id],
             }
 
-            # Save best candidates and their data
+            # Save the best candidates and their data
             if self._term_early and term_cond is not None:
                 """Here we save all elements that satisfy a termination condition."""
                 indices = np.arange(term_cond.shape[0])[term_cond]
@@ -229,11 +228,11 @@ class MimicryTester(SMOO):
                 json.dump(stats, f, indent=2)
 
             logging.info(
-                f"\tBest candidate(s) have a fitness of: {', '.join([str(c.fitness) for c in self._optimizer.best_candidates])}"
+                f"Best candidate(s) have a fitness of: {', '.join([str(c.fitness) for c in self._optimizer.best_candidates])}"
             )
 
             self._optimizer.reset()  # Reset the learner to have clean slate in next iteration.
-            logging.info("\tReset learner!")
+            logging.info("Reset learner!")
 
     def _inner_loop(
         self,
@@ -271,7 +270,7 @@ class MimicryTester(SMOO):
         """We predict the label from the mixed images."""
         predictions: Tensor = self._process(images_tensor)
 
-        # Create origin batch for comparison
+        # Create the origin batch for comparison
         origin_batch = self._img_rgb.expand(images_tensor.shape[0], *self._img_rgb.shape[1:])
 
         self._objectives.evaluate_all(
