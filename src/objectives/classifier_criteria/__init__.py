@@ -2,6 +2,7 @@
 
 from ._accuracy import Accuracy
 from ._adversarial_distance import AdversarialDistance
+from ._binary_change import BinaryChange
 from ._dynamic_confidence_balance import DynamicConfidenceBalance
 from ._is_misclassified import IsMisclassified
 from ._naive_confidence_balance import NaiveConfidenceBalance
@@ -14,4 +15,5 @@ __all__ = [
     "NaiveConfidenceBalance",
     "DynamicConfidenceBalance",
     "AdversarialDistance",
+    "BinaryChange",
 ]

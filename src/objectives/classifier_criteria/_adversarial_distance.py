@@ -51,7 +51,6 @@ class AdversarialDistance(ClassifierCriterion):
         partial = (-1) ** (2 - self._inverse.real) * (
             logits[:, origin] - second_term
         ) + self._inverse.real
-        partial = (partial + 1) / 2
 
         if self._exp_decay_lambda is not None:
             """
