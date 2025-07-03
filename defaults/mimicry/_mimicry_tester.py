@@ -333,7 +333,7 @@ class MimicryTester(SMOO):
 
             # We are only interested in a candidate if the prediction matches the label.
             exclude_cond = y_hat.argmax().item() not in exclude if exclude is not None else True
-            if (y_hat.argmax().item() == label) or (label == -1) and exclude_cond:
+            if ((y_hat.argmax().item() == label) or (label == -1)) and exclude_cond:
                 ws.append(w)
                 imgs.append(img)
                 y_hats.append(y_hat)
