@@ -12,6 +12,7 @@ class ExperimentConfig:
     classes: list[int]  # The classes in the experiment (-1 is unconditional).
     seeds: list[Optional[int]] = field(default_factory=list)  # Seeds for each sample.
     save_as: str = field(default="mimicry_exp")  # The name identifier for saved experiment files.
+    conditional: bool = field(default=True)
 
     def __post_init__(self) -> None:
         """Post processing for consistency."""

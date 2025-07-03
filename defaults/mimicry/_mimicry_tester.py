@@ -100,6 +100,10 @@ class MimicryTester(SMOO):
 
         for class_idx, sample_id in product(c, range(spc)):
             logging.info(f"Test class {class_idx}, sample idx {sample_id}.")
+            if not self._config.conditional and class_idx != -1:
+                logging.warning(
+                    f"\tTesting is configured as unconditional, but class is set to {class_idx}. This warning can be ignored if intentional."
+                )
             start_time = time()  # Stores the start time of the current experiment.
 
             w0_tensors, w0_images, w0_ys, w0_trials = self._generate_seeds(
@@ -118,7 +122,9 @@ class MimicryTester(SMOO):
                 self._generate_noise(self._num_ws)
                 if validity_domain
                 else self._generate_seeds(
-                    self._num_ws, -1 if class_idx == -1 else second.item(), exclude=[first.item()]
+                    self._num_ws,
+                    second.item() if self._config.conditional else -1,
+                    exclude=[first.item()],
                 )
             )
             second, *_ = torch.argsort(wn_ys, descending=True)[0]
