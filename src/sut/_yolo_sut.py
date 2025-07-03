@@ -22,6 +22,7 @@ class YoloSUT(SUT):
         return_bboxes: bool = False,
         objectness_exists: bool = True,
         return_objectness: bool = False,
+        return_indices: Optional[list[int]] = None,
     ) -> None:
         """
         Initialize the classifier SUT.
@@ -33,6 +34,7 @@ class YoloSUT(SUT):
         :param return_objectness: Whether to return objectness.
         :param return_confidences: Whether to return the confidence of predictions.
         :param objectness_exists: Whether the model outputs objectness.
+        :param return_indices: Indices of the outputs to return (default return all).
         """
         self._batch_size = batch_size
         self._model = model.model
@@ -44,11 +46,17 @@ class YoloSUT(SUT):
         self._return_bbox = return_bboxes
         self._return_objectness = return_objectness
 
-        assert return_confidences or return_bboxes or return_objectness, "At least one of the outputs must be returned."
-        assert sum((return_confidences.real, return_bboxes.real, return_objectness.real)) == 1, "For now only returning one output is supported."
-        assert not return_objectness or objectness_exists, "Objectness exist if it should be returned."
+        self._return_indices = return_indices
 
-
+        assert (
+            return_confidences or return_bboxes or return_objectness
+        ), "At least one of the outputs must be returned."
+        assert (
+            sum((return_confidences.real, return_bboxes.real, return_objectness.real)) == 1
+        ), "For now only returning one output is supported."
+        assert (
+            not return_objectness or objectness_exists
+        ), "Objectness exist if it should be returned."
 
     def process_input(self, inpt: Tensor) -> Tensor:
         """
@@ -56,6 +64,7 @@ class YoloSUT(SUT):
 
         :param inpt: Input tensor.
         :return: Predicted class probabilities on CPU.
+        :raises ValueError: If no output is selected.
         """
         batch_size = max(
             self._batch_size or inpt.size(0), 1
@@ -69,19 +78,37 @@ class YoloSUT(SUT):
         with torch.no_grad():
             for c in chunks:
                 output = self._model(c)[0]
-                bboxes.append(output[:,:, :4])
+                bboxes.append(output[:, :4, :])
                 if self._objectness_exists:
-                    objectness.append(output[:,:, 4])
-                confidences.append(output[:,:, 5 if self._objectness_exists else 4:])
+                    objectness.append(output[:, 4, :])
+                idx_start = 5 if self._objectness_exists else 4
+                confidences.append(output[:, idx_start:, :])
 
         objectness = torch.cat(objectness, dim=0) if self._objectness_exists else None
         confidences = torch.cat(confidences, dim=0)
         bboxes = torch.cat(bboxes, dim=0)
 
+        """Here we sort all predictions in the image by the magnitude of confidences."""
+        top_score, _ = confidences.max(dim=1)
+        sorted_indices = top_score.argsort(dim=1, descending=True).unsqueeze(0)
+
         if self._return_confidences:
-            return confidences
+            sorted_data = torch.gather(
+                confidences, dim=2, index=sorted_indices.expand(*confidences.shape)
+            )
         elif self._return_bbox:
-            return bboxes
+            sorted_data = torch.gather(bboxes, dim=2, index=sorted_indices.expand(*bboxes.shape))
         elif self._return_objectness:
-            return objectness
-        return torch.empty()  # This should never be reached.
+            sorted_data = torch.gather(
+                objectness, dim=2, index=sorted_indices.expand(*objectness.shape)
+            )
+        else:
+            raise ValueError("No output selected.")
+
+        """We select which indices to return, if we only return a singular datapoint, we remove the datapoint dimension."""
+        return_indices = self._return_indices or torch.arange(sorted_indices.shape[-1])
+        return (
+            sorted_data[:, :, return_indices]
+            if len(return_indices) > 1
+            else sorted_data[:, :, return_indices].squeeze(-1)
+        )
