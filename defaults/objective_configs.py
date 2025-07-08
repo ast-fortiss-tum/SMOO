@@ -16,7 +16,7 @@ DYNAMIC_ADVERSARIAL_TESTING: Allows for a changing target in the optimization, i
 TARGETED_ADVERSARIAL_TESTING: Enforces a fixed target in the optimization, i.e the adversarial class can`t change.
 """
 DYNAMIC_ADVERSARIAL_TESTING = [
-    AdversarialDistance(exp_decay_lambda=5.0),
+    AdversarialDistance(),
     MatrixDistance(),
 ]
 TARGETED_ADVERSARIAL_TESTING = [

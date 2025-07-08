@@ -85,11 +85,12 @@ class MimicryTester(SMOO):
         self._early_termination = early_termination or (lambda _: (False, None))
         self._term_early: bool = False
 
-    def test(self, validity_domain: bool = False) -> None:
+    def test(self, validity_domain: bool = False, unique_generation: bool = True) -> None:
         """
         Testing the predictor for its decision boundary using a set of (test!) Inputs.
 
         :param validity_domain: Whether the validity domain should be tested for.
+        :param unique_generation: Whether to use a unique generation for each seed or they can overlap.
         """
         script_dir = os.path.dirname(os.path.abspath(__file__))
         spc, c, seeds = self._config.samples_per_class, self._config.classes, self._config.seeds
@@ -117,13 +118,14 @@ class MimicryTester(SMOO):
             first, second, *_ = torch.argsort(w0_ys, descending=True)[0]
             self._img_rgb = w0_images[0]
 
+            exclude = [first.item()] if unique_generation else None
             wn_tensors, wn_images, wn_ys, wn_trials = (
                 self._generate_noise(self._num_ws)
                 if validity_domain
                 else self._generate_seeds(
                     self._num_ws,
                     second.item() if self._config.conditional else -1,
-                    exclude=[first.item()],
+                    exclude=exclude,
                 )
             )
             second, *_ = torch.argsort(wn_ys, descending=True)[0]
@@ -167,9 +169,8 @@ class MimicryTester(SMOO):
                     break
                 # Assign fitness and additional data (in our case images) to the current population.
                 self._optimizer.new_population()
-
-            # Evaluate the last generation.
-            if not self._term_early:
+            else:
+                # Evaluate the last generation.
                 images, fitness, preds, term_cond, gen_data = self._inner_loop(
                     candidates, first.item(), second.item(), self._config.generations
                 )
