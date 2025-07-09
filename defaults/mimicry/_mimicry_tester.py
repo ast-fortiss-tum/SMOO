@@ -118,7 +118,7 @@ class MimicryTester(SMOO):
             first, second, *_ = torch.argsort(w0_ys, descending=True)[0]
             self._img_rgb = w0_images[0]
 
-            exclude = [first.item()] if unique_generation else None
+            exclude = [first.item()] if unique_generation else list()
             wn_tensors, wn_images, wn_ys, wn_trials = (
                 self._generate_noise(self._num_ws)
                 if validity_domain
@@ -315,6 +315,8 @@ class MimicryTester(SMOO):
         :param seed: A seed to be used for reproducibility.
         :returns: The generated w vectors, the corresponding images, confidence values and the amount of trials needed.
         """
+        exclude = exclude or list()
+
         ws: list[Tensor] = []
         imgs: list[Tensor] = []
         y_hats: list[Tensor] = []
@@ -322,17 +324,19 @@ class MimicryTester(SMOO):
         logging.info(f"Generate seed(s) for class: {label}.")
         # For logging purposes to see how many samples we need to find valid seed.
         trials = 0
+        seed = seed or self._get_time_seed()
         while len(ws) < amount:
-            trials += 1
             # We generate w latent vector.
-            w = self._manipulator.get_w(self._get_time_seed() if seed is None else seed, label)
+            w = self._manipulator.get_w(seed + trials, label)  # Adding trial.
+            trials += 1
+            seed = self._get_time_seed()  # If the initial seed fails, we fall back to random.
             # We generate and transform the image to RGB if it is in Grayscale.
             img = self._manipulator.get_images(w)
             img = self._assure_rgb(img)
             y_hat = self._process(img)
 
             # We are only interested in a candidate if the prediction matches the label.
-            exclude_cond = y_hat.argmax().item() not in exclude if exclude is not None else True
+            exclude_cond = y_hat.argmax().item() not in exclude
             if ((y_hat.argmax().item() == label) or (label == -1)) and exclude_cond:
                 ws.append(w)
                 imgs.append(img)
