@@ -151,6 +151,12 @@ class MimicryTester(SMOO):
                 logging.info(f"Generation {gen + 1} start.")
 
                 # We define the inner loop with its parameters.
+                self._objectives.precondition_all(
+                    {
+                        "logits": w0_ys,
+                    }
+                )
+
                 images, fitness, preds, term_cond, gen_data = self._inner_loop(
                     candidates, first.item(), second.item(), gen + 1
                 )

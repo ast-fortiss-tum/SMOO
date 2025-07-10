@@ -29,6 +29,15 @@ class CriterionCollection:
         for criterion in self._criteria:
             self._results[criterion.name] = criterion.evaluate(**iargs)
 
+    def precondition_all(self, iargs: dict[str, Any]) -> None:
+        """
+        Precondition all criteria in the collection.
+
+        :param iargs: The input arguments.
+        """
+        for criterion in self._criteria:
+            criterion.precondition(**iargs)
+
     def get_results_of(
         self, criterion: Union[Type[Criterion], Criterion]
     ) -> Union[float, list[float]]:

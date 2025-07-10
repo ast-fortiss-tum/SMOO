@@ -45,6 +45,14 @@ class Criterion(ABC):
         """
         return self._name
 
+    def precondition(self, **kwargs: Any) -> None:
+        """
+        Allows for preconditioning of the criterion.
+
+        :param kwargs: The KW-Args parsed (should be same as the ones used in cirterion).
+        """
+        pass
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """
         Automatically apply wrapper if the evaluate function gets implemented.
