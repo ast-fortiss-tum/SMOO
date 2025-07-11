@@ -1,8 +1,7 @@
 # SMOO
 SMOO is a generalizable framework for testing of ML / DL models. 
 Understanding a classifiers behavior in various situations is important in many domains such as automated driving and many more.
-To test for boundaries we need a conditional StyleGAN pretrained on a dataset of similar domain. 
-It is important that it is conditional and as such can generate images based on class information.
+SMOO allows for easy change of components, in order to adapt to new testing scenarios.
 
 The framework consists of four distinct components:
 
