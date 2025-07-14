@@ -31,7 +31,7 @@ class ImageCriterion(Criterion):
                 """
                 if batch_dim is None:
                     images = [i.unsqueeze(0) for i in images]
-                elif batch_dim != 1:
+                elif batch_dim != 0:
                     images = [i.transpose(0, batch_dim) for i in images]
                 results = eval_func(images=images, **kwargs)
                 return results[0] if batch_dim is None else results
