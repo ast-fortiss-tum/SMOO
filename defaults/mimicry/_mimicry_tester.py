@@ -118,7 +118,7 @@ class MimicryTester(SMOO):
             first, second, *_ = torch.argsort(w0_ys, descending=True)[0]
             self._img_rgb = w0_images[0]
 
-            exclude = [first.item()] if unique_generation else list()
+            exclude = [first.item()] if (unique_generation and class_idx != -1) else list()
             wn_tensors, wn_images, wn_ys, wn_trials = (
                 self._generate_noise(self._num_ws)
                 if validity_domain

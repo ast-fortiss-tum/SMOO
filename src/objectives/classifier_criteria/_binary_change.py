@@ -1,6 +1,7 @@
 from typing import Any, Optional
 
 from torch import Tensor
+import torch
 
 from ._classifier_criterion import ClassifierCriterion
 
@@ -15,6 +16,7 @@ class BinaryChange(ClassifierCriterion):
         self,
         target_logit: Optional[int] = None,
         flip_sign: bool = False,
+        boundary: bool = False,
         inverse: bool = False,
         v_range: Optional[tuple[float, float]] = None,
     ) -> None:
@@ -33,6 +35,7 @@ class BinaryChange(ClassifierCriterion):
         self._target_logit = target_logit
         self._v_range = v_range or (0.0, 1.0)
         self._flip_sign = flip_sign
+        self._boundary = boundary
 
         if target_logit is None:
             raise NotImplementedError(
@@ -52,13 +55,21 @@ class BinaryChange(ClassifierCriterion):
         """
         logits = logits[:, self._target_logit] if self._target_logit else logits
 
+        score = torch.zeros_like(logits)
+
         if self._flip_sign:
             if self._precondition_logits is None:
                 raise ValueError("Precondition logits must be set before flipping sign.")
-            partial = logits * self._precondition_logits
+            # Encourage sign flip: +1 if flipped, -1 if not.
+            score += -torch.sign(logits * self._precondition_logits) * torch.abs(logits)
         else:
-            partial = (-1) ** (2 - self._inverse.real) * logits
-        partial = (partial - self._v_range[0]) / (self._v_range[1] - self._v_range[0])
+            score += (-1) ** (2 - self._inverse.real) * logits
+
+        if self._boundary:
+            # Encourage small magnitude (approaching 0).
+            score += -torch.abs(logits)
+
+        partial = (score - self._v_range[0]) / (self._v_range[1] - self._v_range[0])
         results = partial.tolist()
         return results
 

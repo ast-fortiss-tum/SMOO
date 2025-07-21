@@ -90,18 +90,18 @@ class YoloSUT(SUT):
 
         """Here we sort all predictions in the image by the magnitude of confidences."""
         top_score, _ = confidences.max(dim=1)
-        sort = top_score.argsort(dim=1, descending=True).unsqueeze(1)
+        sort = top_score.argsort(dim=1, descending=True)
         if self._return_confidences:
             data = confidences
         elif self._return_bbox:
             data = bboxes
         elif self._return_objectness:
-            data = objectness
+            data = objectness.unsqueeze(1)
         else:
             raise ValueError("No output selected.")
-        sorted_data = torch.gather(data, dim=2, index=sort.expand(*data.shape))
+        sorted_data = torch.gather(data, dim=2, index=sort.unsqueeze(1).expand(-1, data.size(1), -1))
 
         """We select which indices to return, if we only return a singular datapoint, we remove the datapoint dimension."""
-        return_indices = self._return_indices or torch.arange(sort.shape[-1])
+        return_indices = self._return_indices or torch.arange(sorted_data.shape[-1])
         return_data = sorted_data[:, :, return_indices]
         return return_data if len(return_indices) > 1 else return_data.squeeze(-1)
