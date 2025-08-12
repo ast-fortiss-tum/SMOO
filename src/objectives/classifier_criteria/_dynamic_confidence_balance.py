@@ -10,7 +10,7 @@ class DynamicConfidenceBalance(ClassifierCriterion):
     """Implements a dynamic confidence balance measure."""
 
     _name: str = "DynCB"
-    _target_primary: bool
+    _target_primary: Optional[bool]
 
     def __init__(self, inverse: bool = False, target_primary: Optional[bool] = None) -> None:
         """
@@ -43,10 +43,11 @@ class DynamicConfidenceBalance(ClassifierCriterion):
         d = torch.abs(logits[:, origin] - second_term)
 
         target = 0
-        if self._target_primary is True:
-            target = second_term
-        elif self._target_primary is False:
-            target = logits[:, origin]
+        if self._target_primary is not None:
+            if self._target_primary:
+                target = second_term
+            elif not self._target_primary:
+                target = logits[:, origin]
 
-        result = torch.abs(self._inverse.real - target - d / s).tolist()
+        result: list[float] = torch.abs(self._inverse.real - target - d / s).float().tolist()
         return result

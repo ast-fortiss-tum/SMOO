@@ -9,7 +9,7 @@ def enable_logging_notebook() -> None:
         level=logging.INFO, format="[%(asctime)s - %(name)s - %(levelname)s] %(message)s"
     )
     logger = logging.getLogger()
-    logger.handlers[0].stream = sys.stdout
+    logger.handlers[0].stream = sys.stdout  # type: ignore[attr-defined]
 
 
 class ContextFilter(logging.Filter):
@@ -25,19 +25,24 @@ class ContextFilter(logging.Filter):
         frame = inspect.currentframe()
         while frame:
             frame = frame.f_back
+            if frame is None:
+                break
             module = frame.f_globals.get("__name__", "")
             if not module.startswith("logging"):
                 break
 
-        cls_name = ""
-        if "self" in frame.f_locals:
-            cls_name = frame.f_locals["self"].__class__.__name__
+        if frame is not None:
+            cls_name = ""
+            if "self" in frame.f_locals:
+                cls_name = frame.f_locals["self"].__class__.__name__
 
-        record.context = (
-            f"{cls_name}.{frame.f_code.co_name}:{frame.f_lineno}"
-            if cls_name
-            else f"{module}.{frame.f_code.co_name}:{frame.f_lineno}"
-        )
+            record.context = (
+                f"{cls_name}.{frame.f_code.co_name}:{frame.f_lineno}"
+                if cls_name
+                else f"{module}.{frame.f_code.co_name}:{frame.f_lineno}"
+            )
+        else:
+            record.context = "unknown:0"
         return True
 
 

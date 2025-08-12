@@ -40,6 +40,7 @@ class NaiveConfidenceBalance(ClassifierCriterion):
         d = abs(y1p - y2p)
 
         if self._target_primary is None:
-            return abs(self._inverse.real - d / s)
+            result = abs(self._inverse.real - d / s)
         else:
-            return abs(self._inverse.real - (y2p if self._target_primary else y1p) - d / s)
+            result = abs(self._inverse.real - (y2p if self._target_primary else y1p) - d / s)
+        return float(result)

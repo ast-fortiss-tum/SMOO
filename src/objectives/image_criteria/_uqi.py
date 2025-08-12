@@ -22,4 +22,5 @@ class UQI(ImageCriterion):
         :returns: SSIM score.
         """
         i1, i2 = self.prepare_images(images)
-        return 1 - uqi(i1, i2) if self._inverse else uqi(i1, i2)
+        result = 1 - uqi(i1, i2) if self._inverse else uqi(i1, i2)
+        return float(result)

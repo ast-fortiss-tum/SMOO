@@ -33,7 +33,8 @@ class MatrixDistance(ImageCriterion):
         :param _: Additional unused kwargs.
         :returns: The distance.
         """
-        i1, i2, *_ = images  # Expect the image tensors to have shape: B x C x H x W
+        # Expect the image tensors to have shape: B x C x H x W
+        i1, i2, *_ = images  # type: ignore [assignment]
         # Upper bound of distance.
         ub = torch.linalg.matrix_norm(torch.ones_like(i1), self.norm, dim=(-2, -1))
 
@@ -42,5 +43,5 @@ class MatrixDistance(ImageCriterion):
         scaled = frob / ub
 
         channel_wise = scaled.mean(dim=1)
-        results = torch.abs(self._inverse.real - channel_wise).tolist()
+        results: list[float] = torch.abs(self._inverse.real - channel_wise).float().tolist()
         return results

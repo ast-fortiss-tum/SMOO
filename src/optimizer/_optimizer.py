@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Optional, Type
@@ -17,7 +19,7 @@ class Optimizer(ABC):
     _x_current: NDArray
     _fitness: tuple[NDArray, ...]
 
-    _optimizer_type: Type
+    _optimizer_type: Type[Optimizer]
     _num_objectives: int
     _bounds: tuple[int, int]
 
@@ -39,7 +41,7 @@ class Optimizer(ABC):
         """
         ...
 
-    def assign_fitness(self, fitness: Iterable[NDArray], *data: Optional[Iterable]) -> None:
+    def assign_fitness(self, fitness: Iterable[NDArray], *data: Optional[Iterable[Any]]) -> None:
         """
         Assign fitness to the current population and extract the best individual using pareto frontier.
 
@@ -64,7 +66,7 @@ class Optimizer(ABC):
         metrics = np.vstack((new_metrics, old_metrics))
 
         new_data: list[Any] = [None] * new_metrics.shape[0] if data is None else list(zip(*data))
-        data = new_data + [cand.data for cand in self._best_candidates]
+        data = tuple(new_data + [cand.data for cand in self._best_candidates])
 
         solutions = np.vstack(
             (self._x_current, np.array([cand.solution for cand in self._best_candidates]))
@@ -122,7 +124,7 @@ class Optimizer(ABC):
         return self._previous_best
 
     @property
-    def optimizer_type(self) -> Type:
+    def optimizer_type(self) -> Type[Optimizer]:
         """
         Get the type of learner.
 

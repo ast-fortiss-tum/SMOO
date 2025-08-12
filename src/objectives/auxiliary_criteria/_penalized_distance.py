@@ -34,5 +34,6 @@ class PenalizedDistance(Criterion):
         """
         y1p, y2p = logits[label_targets[0]], logits[label_targets[1]]
         score = self.metric.evaluate(images=images, logits=logits, label_targets=label_targets)
+        score = score[0] if isinstance(score, list) else score
         distance = (1 - score) ** (0 if y2p < y1p else 1)
-        return distance
+        return float(distance)

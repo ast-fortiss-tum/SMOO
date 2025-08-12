@@ -19,7 +19,9 @@ class DefaultDF(pd.DataFrame):
             else ["X_prime", "y_prime"]
         )
         af = additional_fields or []
-        super().__init__(columns=["X", "y"] + add + ["runtime"] + af)
+        columns = ["X", "y"] + add + ["runtime"] + af
+        super().__init__()
+        self.reindex(columns=columns)
 
     def append_row(self, data: Any) -> None:
         """

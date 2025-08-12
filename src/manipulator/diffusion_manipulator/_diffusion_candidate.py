@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Union
+from typing import Optional, SupportsIndex, Union, overload
 
 import torch
 from torch import Tensor
@@ -25,15 +25,15 @@ class DiffusionCandidate(Candidate):
             )
 
 
-class DiffusionCandidateList(CandidateList):
+class DiffusionCandidateList(CandidateList[DiffusionCandidate]):
     """A list of candidate solutions for the diffusion based manipulator."""
 
     _candidates: list[DiffusionCandidate]
     _class_embeddings: Tensor
     _xts: Tensor  # N x  Diffusion Steps x Image Embedding
 
-    _origin: Union[DiffusionCandidateList, None] = None
-    _target: Union[DiffusionCandidateList, None] = None
+    _origin: Optional[DiffusionCandidateList] = None
+    _target: Optional[DiffusionCandidateList] = None
 
     def __init__(
         self, *initial_candidates: DiffusionCandidate, separate_candidates: bool = True
@@ -98,7 +98,19 @@ class DiffusionCandidateList(CandidateList):
         """
         return self._target
 
-    def __getitem__(self, index: int) -> DiffusionCandidate:
+    @overload
+    def __getitem__(self, index: SupportsIndex) -> DiffusionCandidate:
+        return self._candidates[index]
+
+    @overload
+    def __getitem__(self, index: slice) -> DiffusionCandidateList:
+        return DiffusionCandidateList(*self._candidates[index], separate_candidates=False)
+
+    def __getitem__(
+        self, index: Union[SupportsIndex, slice]
+    ) -> Union[DiffusionCandidate, DiffusionCandidateList]:
+        if isinstance(index, slice):
+            return DiffusionCandidateList(*self._candidates[index], separate_candidates=False)
         return self._candidates[index]
 
     @classmethod
@@ -106,7 +118,7 @@ class DiffusionCandidateList(CandidateList):
         cls,
         xs: Tensor,
         emb: Tensor,
-        are_origin: list[bool] = None,
+        are_origin: Optional[list[bool]] = None,
         separate_candidates: bool = True,
     ) -> DiffusionCandidateList:
         """

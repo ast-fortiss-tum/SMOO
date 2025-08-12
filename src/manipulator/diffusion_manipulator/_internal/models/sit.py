@@ -418,16 +418,16 @@ class SiT(nn.Module):
         x = self.unpatchify(x)  # (N, out_channels, H, W)
         return x
 
-    @torch.no_grad()
-    def partial_inference(self, x, t, y):
-        x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
+    def partial_inference(self, x, t, y, require_grad=False):
+        with torch.enable_grad() if require_grad else torch.no_grad():
+            x = self.x_embedder(x) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
 
-        t_embed = self.t_embedder(t)  # (N, D)
-        c = t_embed + y
-        for block in self.blocks:
-            x = block(x, c)  # (N, T, D)
-        x = self.final_layer(x, c)  # (N, T, patch_size ** 2 * out_channels)
-        x = self.unpatchify(x)  # (N, out_channels, H, W)
+            t_embed = self.t_embedder(t)  # (N, D)
+            c = t_embed + y
+            for block in self.blocks:
+                x = block(x, c)  # (N, T, D)
+            x = self.final_layer(x, c)  # (N, T, patch_size ** 2 * out_channels)
+            x = self.unpatchify(x)  # (N, out_channels, H, W)
         return x
 
     @torch.no_grad()

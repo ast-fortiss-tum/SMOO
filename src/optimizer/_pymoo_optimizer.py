@@ -126,4 +126,6 @@ class PymooOptimizer(Optimizer):
 
         :return: The solutions.
         """
-        return [c.solution.reshape(self._shape) for c in self._best_candidates]
+        return [
+            c.solution.reshape(self._shape) for c in self._best_candidates if c.solution is not None
+        ]

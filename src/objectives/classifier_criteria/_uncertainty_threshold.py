@@ -33,4 +33,5 @@ class UncertaintyThreshold(ClassifierCriterion):
         """
         ypm = logits.max()
         dist = self._threshold - ypm.item()
-        return abs(dist) if self._absolute else dist
+        result = abs(dist) if self._absolute else dist
+        return float(result)

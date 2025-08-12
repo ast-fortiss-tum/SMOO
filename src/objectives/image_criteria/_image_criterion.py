@@ -12,18 +12,24 @@ class ImageCriterion(Criterion):
     """A criterion that only considers images for evaluation."""
 
     def __init__(self, inverse: bool = False, allow_batched=False) -> None:
+        """
+        Initialize the Image Criterion.
 
+        :param inverse: If true, invert the measure.
+        :param allow_batched: If true, allow batching.
+        """
         super().__init__(inverse, allow_batched)
 
         if self._allow_batched:
             eval_func = self.evaluate
 
             def batched_evaluate(
-                _, *, images: list[Tensor], batch_dim: Optional[int] = None, **kwargs: Any
+                self: Any, *, images: list[Tensor], batch_dim: Optional[int] = None, **kwargs: Any
             ) -> Union[float, list[float]]:
                 """
                 A wrapper to the classifier criterion evaluate function.
 
+                :param self: Self-explanatory :D.
                 :param images: The images to evaluate the criterion on.
                 :param batch_dim: The batch dimension.
                 :param kwargs: The KW-Args parsed.
@@ -34,9 +40,9 @@ class ImageCriterion(Criterion):
                 elif batch_dim != 0:
                     images = [i.transpose(0, batch_dim) for i in images]
                 results = eval_func(images=images, **kwargs)
-                return results[0] if batch_dim is None else results
+                return results[0] if batch_dim is None and isinstance(results, list) else results
 
-            self.evaluate = batched_evaluate.__get__(self, self.__class__)
+            self.evaluate = batched_evaluate.__get__(self, self.__class__)  # type: ignore[method-assign]
 
     @abstractmethod
     def evaluate(self, *, images: list[Tensor], **kwargs: Any) -> Union[float, list[float]]:

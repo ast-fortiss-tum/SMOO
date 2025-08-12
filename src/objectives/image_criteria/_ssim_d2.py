@@ -93,4 +93,4 @@ class SSIMD2(ImageCriterion):
         d = np.sqrt(2.0 - s1 - s2)
 
         d2 = d[pad:-pad, pad:-pad, :].mean()
-        return d2 / np.sqrt(2)
+        return float(d2 / np.sqrt(2))

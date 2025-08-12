@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 import torch
 from torch import Tensor
@@ -12,7 +12,10 @@ class AdversarialDistance(ClassifierCriterion):
     _name: str = "AdvD"
 
     def __init__(
-        self, target_pair: bool = False, inverse: bool = False, exp_decay_lambda: float = None
+        self,
+        target_pair: bool = False,
+        inverse: bool = False,
+        exp_decay_lambda: Optional[float] = None,
     ) -> None:
         """
         Initialize the AdversarialDistance objective.
@@ -39,7 +42,7 @@ class AdversarialDistance(ClassifierCriterion):
         :param _: Unused kwargs.
         :returns: The value in range [0,1].
         """
-        origin, target, *_ = label_targets
+        origin, target, *_ = label_targets  # type: ignore [assignment]
 
         if self._target_pair:
             second_term = logits[target].item()
@@ -60,5 +63,5 @@ class AdversarialDistance(ClassifierCriterion):
             This would result in perfect misclassifications, but with rather lager image distances.
             """
             partial = torch.exp(-self._exp_decay_lambda * partial)
-        results = partial.tolist()
+        results: list[float] = partial.tolist()
         return results

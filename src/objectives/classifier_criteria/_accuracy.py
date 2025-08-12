@@ -20,8 +20,10 @@ class Accuracy(ClassifierCriterion):
         :param _: Unused kwargs.
         :return: The accuracy score.
         """
-        _, y_pred_tags = torch.max(logits, dim=1) if len(logits.shape) > 1 else (None, logits)
+        y_pred_tags = torch.max(logits, dim=1)[1] if len(logits.shape) > 1 else logits
 
-        corr_preds = (label_targets == y_pred_tags).float()
+        # Convert label_targets to tensor for comparison
+        label_tensor = torch.tensor(label_targets, device=logits.device, dtype=y_pred_tags.dtype)
+        corr_preds = (label_tensor == y_pred_tags).float()
         acc = corr_preds.sum() / len(corr_preds)
-        return acc
+        return float(acc.item())

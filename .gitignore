@@ -1,16 +1,14 @@
-.idea
-.venv
 *.csv
 *.pt
 *.ckpt
 *.pkl
 **/_*.ipynb
 *.json*
-__pycache__
 
+**/.*/
+**/_*/
 **/figures/
 **/*data*/
-**/_artifacts/
 **/artifacts/
 **/wandb/
 **/results/

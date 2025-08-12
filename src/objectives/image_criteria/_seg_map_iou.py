@@ -57,8 +57,8 @@ class SegMapIoU(ImageCriterion):
         c1, c2 = (final_sum > final_i1), (final_sum > final_i2)
         iou = torch.logical_and(c1, c2).sum() / torch.logical_or(c1, c2).sum()
 
-        inverted = iou if self._inverse else 1 - iou
-        inverted = inverted.tolist()
+        inverted_tensor: Tensor = iou if self._inverse else 1 - iou
+        inverted: list[float] = inverted_tensor.float().tolist()
         return inverted[0] if batch_dim is None else inverted
 
     @staticmethod

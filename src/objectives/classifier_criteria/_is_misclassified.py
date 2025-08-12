@@ -27,5 +27,8 @@ class IsMisclassified(ClassifierCriterion):
         """
         c1 = label_targets[0]
 
-        results = (logits.argmax(dim=1) == c1) if self._inverse else (logits.argmax(dim=1) != c1)
-        return results.float().tolist()
+        tensor_results: Tensor = (
+            (logits.argmax(dim=1) == c1) if self._inverse else (logits.argmax(dim=1) != c1)
+        )
+        results: list[float] = tensor_results.float().tolist()
+        return results

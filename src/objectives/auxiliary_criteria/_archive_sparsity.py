@@ -11,7 +11,7 @@ class ArchiveSparsity(Criterion):
     """Implements sparsity measure wrt an Archive."""
 
     _name: str = "ArchiveSparsity"
-    _head: Callable
+    _head: Callable[..., Any]
     _on_genomes: bool
 
     metric: Criterion
@@ -63,4 +63,4 @@ class ArchiveSparsity(Criterion):
         distances = [self.metric.evaluate(images=[target, elem]) for elem in archive]
         dist = self._head(distances)
         # A bigger distance is desired if we want to maximize sparsity
-        return dist if self._inverse else 1 - dist
+        return float(dist) if self._inverse else float(1 - dist)

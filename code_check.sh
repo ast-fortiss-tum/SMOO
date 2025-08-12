@@ -4,13 +4,26 @@ python -m black . --line-length 100 --preview
 arr=("defaults" "src" "examples")
 for elem in "${arr[@]}"
 do
-  # Find all relevant Python files, excluding folders starting with "_"
-  files=$(find "$elem" -type f -name "*.py" ! -path "*/_*/*")
-  [ -z "$files" ] && continue # Skip if no matching files
+  filelist=$(mktemp)
+
+  find "$elem" -type f -name "*.py" ! -path "*/_*/*" > "$filelist"
+
+  if [ ! -s "$filelist" ]; then
+    rm -f "$filelist"
+    continue
+  fi
 
   echo "Processing $elem..."
+  darglint -s sphinx $(cat "$filelist")
+  pyflakes $(cat "$filelist")
+  isort --profile black $(cat "$filelist")
 
-  darglint -s sphinx $files
-  pyflakes $files
-  isort --profile black $files
+   # Run mypy except if folder is examples, they are not stable.
+  if [[ "$elem" != "examples" ]]; then
+    mypy --strict --follow-imports=skip @"$filelist"
+  else
+    echo "Skipping mypy check for $elem"
+  fi
+
+  rm -f "$filelist"
 done

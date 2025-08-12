@@ -19,16 +19,16 @@ class MixCandidate(Candidate):
     w_tensor: Optional[torch.Tensor] = None  # The latent vector if already generated.
 
 
-class MixCandidateList(CandidateList):
+class MixCandidateList(CandidateList[MixCandidate]):
     """
     A custom list like object to handle MixCandidates easily.
 
     Note this list object is immutable and caches getters.
     """
 
-    _weights: Optional[list[float]]
-    _labels: Optional[list[int]]
-    _w_indices: Optional[list[int]]
+    _weights: list[float]
+    _labels: list[int]
+    _w_indices: list[int]
     _w0_candidates: Optional[MixCandidateList]
     _wn_candidates: Optional[MixCandidateList]
 
@@ -53,7 +53,7 @@ class MixCandidateList(CandidateList):
 
         self._weights = [elem.weight for elem in self.data]
         self._labels = [elem.label for elem in self.data]
-        self._w_indices = [elem.w_index for elem in self.data]
+        self._w_indices = [elem.w_index for elem in self.data if elem.w_index is not None]
         self._w_tensors = [elem.w_tensor for elem in self.data]
 
         self._w0_candidates = None

@@ -5,7 +5,7 @@ import logging
 import os
 from itertools import product
 from time import time
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -141,7 +141,7 @@ class MimicryTester(SMOO):
             candidates = MixCandidateList(*w0c, *wsc)
 
             # Track generation history for comprehensive logging
-            all_gen_data: list[dict] = []
+            all_gen_data: list[dict[str, Any]] = []
             budget_used: int = 0
 
             # Now we run a search-based optimization strategy to find a good boundary candidate.
@@ -247,7 +247,7 @@ class MimicryTester(SMOO):
         c1: int,
         c2: int,
         generation: int,
-    ) -> tuple[Tensor, tuple[NDArray, ...], Tensor, Optional[NDArray], dict]:
+    ) -> tuple[Tensor, tuple[NDArray, ...], Tensor, Optional[NDArray], dict[str, Any]]:
         """
         The inner loop for the learner.
 
@@ -294,7 +294,7 @@ class MimicryTester(SMOO):
 
         early_term, term_cond = self._early_termination(results)
         self._term_early = early_term
-        if early_term:
+        if early_term and term_cond:
             logging.info(f"Early termination condition met by: {term_cond.sum()} individuals")
 
         # Create generation data row for CSV logging

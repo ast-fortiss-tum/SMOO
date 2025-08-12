@@ -1,7 +1,7 @@
 from typing import Any, Optional
 
-from torch import Tensor
 import torch
+from torch import Tensor
 
 from ._classifier_criterion import ClassifierCriterion
 
@@ -27,6 +27,7 @@ class BinaryChange(ClassifierCriterion):
 
         :param target_logit: Which logit should be observed for change (some classifiers have multiple binary outputs).
         :param flip_sign: Whether the sign should be flipped instead of pure increase / decrease of confidence.
+        :param boundary: If boundary should be approached (i.e 0 Logit or 0.5 confidence).
         :param inverse: Whether the criterion should be inverted.
         :param v_range: Set a range of the input if applicable, to normalize outputs to [0,1].
         :raises NotImplementedError: If target_logit is None.
@@ -70,7 +71,7 @@ class BinaryChange(ClassifierCriterion):
             score += -torch.abs(logits)
 
         partial = (score - self._v_range[0]) / (self._v_range[1] - self._v_range[0])
-        results = partial.tolist()
+        results: list[float] = partial.tolist()
         return results
 
     def precondition(self, *, logits: Tensor, **_: Any) -> None:

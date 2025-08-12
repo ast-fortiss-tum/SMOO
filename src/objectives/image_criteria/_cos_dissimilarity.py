@@ -24,4 +24,4 @@ class CosDissimilarity(ImageCriterion):
         i1, i2 = self.prepare_images(images)
 
         value = np.dot(i1.flatten(), i2.flatten()) / (np.linalg.norm(i1) * np.linalg.norm(i2))
-        return 1 - value
+        return float(1 - value)

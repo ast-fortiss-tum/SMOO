@@ -35,4 +35,4 @@ class Sum(Criterion):
         """
         minv, maxv = self._min_max
         result = (element.sum() - minv) / (maxv - minv)
-        return result
+        return float(result.item())

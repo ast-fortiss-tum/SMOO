@@ -105,17 +105,19 @@ class SMOO(ABC):
         :returns: The converted image (3 x H x W).
         :raises ValueError: If the image shape is not recognized.
         """
-        # We check if the input has a channel dimension.
-        channel = None if len(image.shape) == 2 else len(image.shape) - 3
-        # If we don`t have channels we add a dimension.
-        image = image.unsqueeze(0) if channel is None else image
+        # Add channel dimension if missing (H,W -> C,H,W)
 
-        rep_mask = [1] * len(image.shape)  # A repetition mask for channel extrusions
-        if image.shape[channel] == 1:
-            # If we only have one channel we repeat it 3 times to make it rgb.
-            rep_mask[channel] = 3
-            return image.repeat(*rep_mask)
-        elif image.shape[channel] == 3:
+        if image.ndim == 2:
+            image = image.unsqueeze(0)
+
+        # Channel is always at index -3 for (...,C,H,W) format
+        channel_idx = image.ndim - 3
+        channels = image.shape[channel_idx]
+
+        if channels == 1:
+            # Repeat single channel 3 times to make RGB
+            return image.repeat_interleave(3, dim=channel_idx)
+        elif channels == 3:
             return image
         else:
             raise ValueError(f"Unknown image shape. {image.shape}")

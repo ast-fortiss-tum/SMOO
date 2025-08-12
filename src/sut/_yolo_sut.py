@@ -65,6 +65,7 @@ class YoloSUT(SUT):
         :param inpt: Input tensor.
         :return: Predicted class probabilities on CPU.
         :raises ValueError: If no output is selected.
+        :raises ValueError: If objectness is expected but not computed.
         """
         batch_size = max(
             self._batch_size or inpt.size(0), 1
@@ -84,7 +85,7 @@ class YoloSUT(SUT):
                 idx_start = 5 if self._objectness_exists else 4
                 confidences.append(output[:, idx_start:, :])
 
-        objectness = torch.cat(objectness, dim=0) if self._objectness_exists else None
+        objectness = torch.cat(objectness, dim=0)
         confidences = torch.cat(confidences, dim=0)
         bboxes = torch.cat(bboxes, dim=0)
 
@@ -96,10 +97,15 @@ class YoloSUT(SUT):
         elif self._return_bbox:
             data = bboxes
         elif self._return_objectness:
-            data = objectness.unsqueeze(1)
+            if objectness.numel() > 0:
+                data = objectness.unsqueeze(1)
+            else:
+                raise ValueError("Objectness expected but not computed.")
         else:
             raise ValueError("No output selected.")
-        sorted_data = torch.gather(data, dim=2, index=sort.unsqueeze(1).expand(-1, data.size(1), -1))
+        sorted_data = torch.gather(
+            data, dim=2, index=sort.unsqueeze(1).expand(-1, data.size(1), -1)
+        )
 
         """We select which indices to return, if we only return a singular datapoint, we remove the datapoint dimension."""
         return_indices = self._return_indices or torch.arange(sorted_data.shape[-1])

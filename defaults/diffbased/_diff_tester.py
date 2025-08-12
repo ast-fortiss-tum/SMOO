@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from itertools import product
 from time import time
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -18,7 +18,7 @@ from src import SMOO, TEarlyTermCallable
 from src.manipulator.diffusion_manipulator import (
     DiffusionCandidate,
     DiffusionCandidateList,
-    REPAEManipulator,
+    SiTManipulator,
 )
 from src.objectives import CriterionCollection
 from src.optimizer import Optimizer, PymooOptimizer
@@ -30,7 +30,7 @@ from ._experiment_config import ExperimentConfig
 class DiffTester(SMOO):
     """A diffusion-based tester."""
 
-    _manipulator: REPAEManipulator
+    _manipulator: SiTManipulator
     _optimizer: PymooOptimizer
     _sut: ClassifierSUT
     _config: ExperimentConfig
@@ -39,7 +39,7 @@ class DiffTester(SMOO):
         self,
         *,
         sut: ClassifierSUT,
-        manipulator: REPAEManipulator,
+        manipulator: SiTManipulator,
         optimizer: Optimizer,
         objectives: CriterionCollection,
         config: ExperimentConfig,
@@ -107,8 +107,10 @@ class DiffTester(SMOO):
                 """Here we save all elements that satisfy a termination condition."""
                 indices = np.arange(res.termination_selection.shape[0])[res.termination_selection]
                 for ind in indices:
-                    self._save_tensor_as_image(res.xs[ind], log_dir + f"/best_{ind}.png")
-                    stats[f"best_{ind}_y_hat"] = res.predictions[ind].tolist()
+                    if res.xs is not None:
+                        self._save_tensor_as_image(res.xs[ind], log_dir + f"/best_{ind}.png")
+                    if res.predictions is not None:
+                        stats[f"best_{ind}_y_hat"] = res.predictions[ind].tolist()
                     stats[f"best_{ind}_solution"] = res.solutions[ind].tolist()
                     stats[f"best_{ind}_fitness"] = [
                         res.generation_history[-1][n][ind] for n in self._objectives.names
@@ -151,7 +153,9 @@ class DiffTester(SMOO):
         budget_used: int = 0  # Computational budget measured by SUT evals.
         solution_cache = np.zeros(self._config.solution_shape)  # An empty solution array.
 
-        all_gen_data: list[dict] = []  # Stores fitness values of individuals per generation.
+        all_gen_data: list[dict[str, Any]] = (
+            []
+        )  # Stores fitness values of individuals per generation.
         term_selection: Optional[NDArray] = None  # Which outputs triggered the early termination.
         terminate_early = False
         xs = torch.empty(0)  # Empty variable to allow static checkers to see it is there.
@@ -277,7 +281,7 @@ class DiffTester(SMOO):
 class _OptimResults:
     """A storage class for less convoluted return statements."""
 
-    generation_history: list[dict]  # The history of optimization results.
+    generation_history: list[dict[str, Any]]  # The history of optimization results.
     budget_used: int  # The amount of SUT evaluations used.
     termination_selection: Optional[NDArray]  # The solutions that triggered early termination.
     solutions: NDArray  # The solution interpolation weights.

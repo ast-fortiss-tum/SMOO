@@ -28,4 +28,5 @@ class MSSSIM(ImageCriterion):
         i1, i2 = self.prepare_images(images)
         i1 = i1.transpose(1, 2, 0)
         i2 = i2.transpose(1, 2, 0)
-        return 1 - msssim(i1, i2, MAX=1.0).real if self._inverse else msssim(i1, i2, MAX=1.0).real
+        result = 1 - msssim(i1, i2, MAX=1.0).real if self._inverse else msssim(i1, i2, MAX=1.0).real
+        return float(result)
