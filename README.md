@@ -11,3 +11,7 @@ The framework consists of four distinct components:
 4) The `Objectives`, which quantify the "goodness" of a test input generated.
 
 These components are modular, as such we are not restricted to images, we are also able to quickly adapt the optimization strategy based on individual needs.
+
+
+### Projects using SMOO:
+- [MIMICRY](https://oliverweissl.github.io/project_showcase/mimicry/) - Targeted Deep Learning System Boundary Testing
