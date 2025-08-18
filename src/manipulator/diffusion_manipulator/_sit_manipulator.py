@@ -1,4 +1,3 @@
-import gc
 import logging
 import os
 from typing import Callable, Optional, Union
@@ -8,9 +7,8 @@ from torch import Tensor, nn
 
 from .. import Manipulator
 from ._diffusion_candidate import DiffusionCandidateList
-from ._internal.models.autoencoder import vae_models
-from ._internal.models.sit import SiT, SiT_models
-from ._internal.utils import load_encoders
+from ._internal.models.sit import SiT
+from ._load_sit import load_hynea_default_sit
 
 
 class SiTManipulator(Manipulator):
@@ -24,33 +22,31 @@ class SiTManipulator(Manipulator):
 
     """Model specific parameters."""
     _batch_size: int
+
+    # Loaded from SiT
     _latent_size: int
     _in_channels: int
     _latents_scale: Tensor
     _latents_bias: Tensor
+
+    """Sampling and Manipulation."""
     _interpolation_strategy: str
     _cfg: float
     _epsilon: float = 1e-6  # Precision constant
 
     """Auxiliary lambdas for easy callings."""
-    _embed_y: Callable[[list[Tensor]], Tensor]
+    _embed_y: Callable[[list[int]], Tensor]
     _embed_t: Callable[[list[Tensor]], Tensor]
-
     _manip_function: Callable[..., DiffusionCandidateList]
 
     """Optimization caches."""
     _null_embedding_cache: Optional[Tensor] = None
-    _pre_allocated_buffers: dict[str, Tensor]
+    _pre_allocated_buffers: dict[tuple[int, ...], Tensor]
 
     def __init__(
         self,
         model_file: str,
         cfg_scale: float = 1.5,
-        vae: str = "f16d32",
-        model: str = "SiT-XL/1",
-        encoder: str = "dinov2-vit-b",
-        image_resolution: int = 256,
-        num_classes: int = 1000,
         batch_size: int = 0,
         manipulation_strategy: str = "new",
         interpolation_strategy: str = "linear",
@@ -60,81 +56,32 @@ class SiTManipulator(Manipulator):
         """
         Initialize the manipulator based on REPA-E diffusion models.
 
-        :param model_file: Model file to load weights from.
+        :param model_file: Path to the model file.
         :param cfg_scale: Classifier free guidance scale for conditions in the sampling.
-        :param vae: The type of VAE model to use.
-        :param model: The type of model to use.
-        :param encoder: The type of encoder to use.
-        :param image_resolution: Image resolution for generation.
-        :param num_classes: Number of classes in the dataset.
         :param batch_size: Batch size to use for generation of samples (0 means all elements get taken).
         :param manipulation_strategy: Manipulation strategy to use.
         :param interpolation_strategy: Interpolation strategy to use.
         :param device: CUDA device to use if available.
         :param require_grad: Whether to enable gradients for training operations.
         :raises ValueError: If manipulation_strategy is not supported.
-        :raises NotImplementedError: If VAE type is not supported.
         """
         self.require_grad = require_grad
         self._prepare_cuda(device)
         self._batch_size = batch_size
-        state_dict = torch.load(model_file, weights_only=False)
+
         self._cfg = cfg_scale
 
-        """Prepare VAE model."""
-        if vae == "f8d4":
-            self._latent_size = image_resolution // 8
-            self._in_channels = 4
-        elif vae == "f16d32":
-            self._latent_size = image_resolution // 16
-            self._in_channels = 32
-        else:
-            raise NotImplementedError(f"VAE of type {vae} is not supported")
-        self._vae = vae_models[vae]()
-        self._vae.load_state_dict(state_dict["vae"])
-        self._vae.eval()
-        self._vae.to(self._device)
+        loaded = load_hynea_default_sit(model_file=model_file, device=device)
+        for name, value in vars(loaded).items():
+            if not name.startswith("__"):
+                setattr(self, f"_{name}", value)
 
-        """Prepare SiT model with optimized loading."""
-        encoders, _, _ = load_encoders(encoder, "cpu", image_resolution)
-        z_dims = [encoder.embed_dim for encoder in encoders] if encoder != "None" else [0]
-        # Immediate cleanup
-        del encoders
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        self._model = SiT_models[model](
-            input_size=self._latent_size,
-            in_channels=self._in_channels,
-            num_classes=num_classes,
-            class_dropout_prob=0.1,
-            z_dims=z_dims,
-            encoder_depth=8,
-            bn_momentum=0.1,
-            fused_attn=True,
-            qk_norm=False,
-        )
-        self._model.load_state_dict(state_dict["ema"])
-        self._model.eval()
-        self._model.to(self._device)
-
-        self._latents_scale = (
-            state_dict["ema"]["bn.running_var"]
-            .rsqrt()
-            .view(1, self._in_channels, 1, 1)
-            .to(self._device)
-        )
-        self._latents_bias = (
-            state_dict["ema"]["bn.running_mean"].view(1, self._in_channels, 1, 1).to(self._device)
-        )
-
-        """Clean up with optimized memory management."""
-        del state_dict
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+        self._model = loaded.model
+        self._vae = loaded.vae
+        self._latents_scale = loaded.latents_scale
+        self._latents_bias = loaded.latents_bias
+        self._latent_size = loaded.latent_size
+        self._in_channels = loaded.in_channels
 
         """Define Embedding lambdas"""
         if self.require_grad:
@@ -345,8 +292,10 @@ class SiTManipulator(Manipulator):
                     self._null_embedding_cache is None
                     or self._null_embedding_cache.shape[0] != y.shape[0]
                 ):
-                    self._null_embedding_cache = self._embed_y([1000] * y.shape[0])
-                y_curr = torch.cat((y, self._null_embedding_cache), dim=0)
+                    null_embedding_cache = self._embed_y([1000] * y.shape[0])
+                else:
+                    null_embedding_cache = self._null_embedding_cache
+                y_curr = torch.cat((y, null_embedding_cache), dim=0)
                 t_curr = t_curr.repeat(2, *([1] * (t_curr.ndim - 1)))
             else:
                 model_input, y_curr = x, y
@@ -361,21 +310,21 @@ class SiTManipulator(Manipulator):
         return x + step * d_cur
 
     def get_diff_steps(
-        self, class_labels: list[int], n_steps: int = 50, x_cur: Optional[Tensor] = None
+        self, class_labels: list[int], n_steps: int = 50, x_0: Optional[Tensor] = None
     ) -> tuple[Tensor, Tensor]:
         """
         Get latent information for all diffusion steps with optimized memory usage.
 
         :param class_labels: Class label to generate diffusion steps for.
         :param n_steps: Number of steps in the denoising.
-        :param x_cur: Optional starting latent vector if sampled differently.
+        :param x_0: Optional starting latent vector if sampled differently.
         :returns: A list of latent vectors through denoising and the class embedding.
         """
         batch_size = len(class_labels)
 
         x_cur = (
-            x_cur.to(self._device)
-            if x_cur is not None
+            x_0.to(self._device)
+            if x_0 is not None
             else torch.randn(
                 batch_size,
                 self._in_channels,

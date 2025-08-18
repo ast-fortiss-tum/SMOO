@@ -13,20 +13,29 @@ from .auxiliary_components import OptimizerCandidate
 class Optimizer(ABC):
     """An abstract optimizer class."""
 
-    # Standard elements.
-    _best_candidates: list[OptimizerCandidate]
-    _previous_best: list[OptimizerCandidate]
-    _x_current: NDArray
-    _fitness: tuple[NDArray, ...]
+    # Standard elements (if applicable).
+    _best_candidates: list[OptimizerCandidate]  # The current best candidate.
+    _previous_best: list[OptimizerCandidate]  # The previous best solution candidate.
+    _x_current: NDArray  # The current solution.
+    _fitness: tuple[NDArray, ...]  # The current fitness.
+    _bounds: tuple[int, int]  # Solution bounds.
+    _n_var: int  # Solution size.
 
-    _optimizer_type: Type[Optimizer]
+    # Always exist.
+    _optimizer_type: Type[Any]
     _num_objectives: int
-    _bounds: tuple[int, int]
 
-    _n_var: int
+    def __init__(self, num_objectives: int) -> None:
+        """
+        Init default values.
+
+        :param num_objectives: The number of objectives.
+        """
+        self._optimizer_type = type(self)
+        self._num_objectives = num_objectives
 
     @abstractmethod
-    def new_population(self) -> None:
+    def update(self) -> None:
         """
         Generate a new population.
         """
@@ -54,7 +63,7 @@ class Optimizer(ABC):
 
         assert (
             len(fitness) == self._num_objectives
-        ), f"Error: {len(fitness)} Fitness values found, {self._num_objectives} needed."
+        ), f"Error: {len(fitness)} Fitness values found, {self._num_objectives} expected."
 
         self._fitness = fitness
 
@@ -124,10 +133,9 @@ class Optimizer(ABC):
         return self._previous_best
 
     @property
-    def optimizer_type(self) -> Type[Optimizer]:
+    def optimizer_type(self) -> Type[Any]:
         """
-        Get the type of learner.
-
+        Get the type of the optimizer.
 
         :returns: The type.
         """

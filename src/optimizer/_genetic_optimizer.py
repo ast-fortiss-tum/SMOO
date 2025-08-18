@@ -37,6 +37,7 @@ class GeneticOptimizer(Optimizer):
         :param mutation_rate: The mutation rate.
         :param bounds: The bounds of the genome.
         """
+        super().__init__(num_objectives)
         self._n_var, *_ = x0.shape
         self._bounds = bounds
         self._x_current = x0
@@ -45,10 +46,8 @@ class GeneticOptimizer(Optimizer):
 
         self._vec_mutate = np.vectorize(self._mutate)
         self._best_candidates = [OptimizerCandidate(x0[0], np.inf)]
-        self._learner_type = type(self)
-        self._num_objectives = num_objectives
 
-    def new_population(self) -> None:
+    def update(self) -> None:
         """Generate a new population based on fitness of old population."""
         parents = self._tournament_selection()
 

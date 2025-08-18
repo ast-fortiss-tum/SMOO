@@ -174,7 +174,7 @@ class MimicryTester(SMOO):
                     )
                     break
                 # Assign fitness and additional data (in our case images) to the current population.
-                self._optimizer.new_population()
+                self._optimizer.update()
             else:
                 # Evaluate the last generation.
                 images, fitness, preds, term_cond, gen_data = self._inner_loop(

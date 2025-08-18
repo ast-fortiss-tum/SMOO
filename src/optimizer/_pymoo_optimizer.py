@@ -43,17 +43,17 @@ class PymooOptimizer(Optimizer):
         :param num_objectives: The number of objectives the learner can handle.
         :param solution_shape: The shape of the solution arrays.
         """
+        super().__init__(num_objectives)
         """Initialize Constants."""
         self._params = algo_params
         self._algorithm = algorithm
         self._bounds = bounds
-        self._num_objectives = num_objectives
 
         """Initialize optimization problem and initial solutions."""
         self.update_problem(solution_shape)
         self._optimizer_type = type(self._pymoo_algo)
 
-    def new_population(self) -> None:
+    def update(self) -> None:
         """
         Generate a new population.
         """

@@ -219,7 +219,7 @@ class DiffTester(SMOO):
                 self._optimizer.assign_fitness(
                     [np.asarray(f) for f in results.values()], xsc, predictions.numpy()
                 )
-                self._optimizer.new_population()
+                self._optimizer.update()
 
                 terminate_early, term_selection = self._early_termination(results)
                 logging.info(f"Generation {i} done in {time() - gen_start}.")

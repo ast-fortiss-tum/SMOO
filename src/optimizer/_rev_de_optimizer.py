@@ -44,6 +44,7 @@ class RevDEOptimizer(Optimizer):
         :param cr: The crossover rate.
         :param continuous: If genomes are continuous or not.
         """
+        super().__init__(num_objectives)
         self._population_size = population_size
         self._n_var, *_ = x0.shape
 
@@ -54,10 +55,8 @@ class RevDEOptimizer(Optimizer):
 
         self._x_current = x0  # pop_size x genome size
         self._best_candidates = [OptimizerCandidate(x0[0], np.inf)]
-        self._learner_type = type(self)
-        self._num_objectives = num_objectives
 
-    def new_population(self) -> None:
+    def update(self) -> None:
         """Generate a new population based on the fitness of the current population."""
         x, f = self._select(self._x_current, self._fitness[0])
         self._x_current = self._recombination(x)

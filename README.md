@@ -1,7 +1,7 @@
 # SMOO
-SMOO is a generalizable framework for testing of ML / DL models. 
-Understanding a classifiers behavior in various situations is important in many domains such as automated driving and many more.
-SMOO allows for easy change of components, in order to adapt to new testing scenarios.
+SMOO is a flexible, generalizable framework for testing machine learning (ML) and deep learning (DL) models.
+Understanding the behavior of DL systems across diverse scenarios is critical in many domains, including autonomous driving and beyond.
+SMOO’s modular design allows components to be easily replaced or reconfigured, making it straightforward to adapt to new testing requirements.
 
 The framework consists of four distinct components:
 
