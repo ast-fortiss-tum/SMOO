@@ -76,13 +76,6 @@ class SiTManipulator(Manipulator):
             if not name.startswith("__"):
                 setattr(self, f"_{name}", value)
 
-        self._model = loaded.model
-        self._vae = loaded.vae
-        self._latents_scale = loaded.latents_scale
-        self._latents_bias = loaded.latents_bias
-        self._latent_size = loaded.latent_size
-        self._in_channels = loaded.in_channels
-
         """Define Embedding lambdas"""
         if self.require_grad:
             self._embed_y = lambda y: self._model.y_embedder(

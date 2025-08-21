@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Iterable, NoReturn
+from typing import Any, Callable, Iterable, NoReturn
 
 from torch import Tensor
 from torch.optim import Optimizer as TorchOptimizer
@@ -14,22 +14,26 @@ class TorchModelOptimizer(Optimizer):
     """
 
     _grad_optimizer: TorchOptimizer
+    _loss_reductor: Callable[[tuple[Tensor, ...]], Tensor]
     _loss: Tensor
 
     def __init__(
         self,
         grad_optimizer: TorchOptimizer,
         num_objectives: int,
+        loss_reductor: Callable[[tuple[Tensor, ...]], Tensor],
     ) -> None:
         """
         Initialize the hypernetwork optimizer.
 
         :param grad_optimizer: The gradient optimizer.
         :param num_objectives: The number of objectives.
+        :param loss_reductor: The loss reductor function that ensures we get a scalar loss.
         """
         super().__init__(num_objectives)
         self._grad_optimizer = grad_optimizer
         self._optimizer_type = type(self._grad_optimizer)
+        self._loss_reductor = loss_reductor
 
     def assign_fitness(self, fitness: Iterable[Tensor], *_: Any) -> None:
         """
@@ -44,7 +48,7 @@ class TorchModelOptimizer(Optimizer):
             len(fitness) == self._num_objectives
         ), f"Error: {len(fitness)} Fitness (Loss) values found, {self._num_objectives} expected."
 
-        self._loss = fitness  # TODO: fix this
+        self._loss = self._loss_reductor(fitness)
 
     def update(self) -> None:
         """Generate a new population based on fitness of old population."""

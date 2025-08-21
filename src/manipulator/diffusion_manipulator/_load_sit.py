@@ -62,6 +62,7 @@ def load_sit(
     """Prepare SiT model with optimized loading."""
     encoders, _, _ = load_encoders(encoder, "cpu", image_resolution)
     z_dims = [encoder.embed_dim for encoder in encoders] if encoder != "None" else [0]
+
     # Immediate cleanup
     del encoders
     gc.collect()
