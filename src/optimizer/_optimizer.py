@@ -6,6 +6,7 @@ from typing import Any, Iterable, Optional, Type
 
 import numpy as np
 from numpy.typing import NDArray
+from torch import Tensor
 
 from .auxiliary_components import OptimizerCandidate
 
@@ -59,6 +60,7 @@ class Optimizer(ABC):
         """
         logging.info(f"Assigning fitness to {self.__class__.__name__}")
         # Format fitness into tuple if it is list or singular item.
+        fitness = [f.numpy() if isinstance(f, Tensor) else f for f in fitness]
         fitness = tuple(fitness)
 
         assert (

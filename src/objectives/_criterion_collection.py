@@ -1,8 +1,10 @@
 from typing import Any, Type, Union
 
+from torch import Tensor
+
 from ._criterion import Criterion
 
-TCriterionResults = dict[str, Union[float, list[float]]]
+TCriterionResults = dict[str, Union[float, list[float], Tensor]]
 
 
 class CriterionCollection:
