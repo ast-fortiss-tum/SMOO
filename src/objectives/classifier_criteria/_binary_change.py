@@ -61,8 +61,8 @@ class BinaryChange(ClassifierCriterion):
         if self._flip_sign:
             if self._precondition_logits is None:
                 raise ValueError("Precondition logits must be set before flipping sign.")
-            # Encourage sign flip: +1 if flipped, -1 if not.
-            score += -torch.sign(logits * self._precondition_logits) * torch.abs(logits)
+            # Encourage sign flip: -1 if flipped, +1 if not.
+            score += torch.sign(logits * self._precondition_logits) * torch.abs(logits)
         else:
             score += (-1) ** (2 - self._inverse.real) * logits
 
