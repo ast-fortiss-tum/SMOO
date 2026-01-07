@@ -1,7 +1,7 @@
 import gc
 import logging
+import os
 from abc import ABC, abstractmethod
-from datetime import datetime
 from typing import Any, Callable, Optional, Union
 
 import numpy as np
@@ -81,20 +81,19 @@ class SMOO(ABC):
         :param tensor: The tensor to save.
         :param path: The directory to save the image to.
         """
-        array = tensor.cpu().numpy() if isinstance(tensor, torch.Tensor) else tensor
+        array = tensor.cpu().detach().numpy() if isinstance(tensor, torch.Tensor) else tensor
         image = array.squeeze().transpose(1, 2, 0)  # C x H x W  -> H x W x C
         image = (image * 255).astype(np.uint8)  # [0,1] -> [0, 255]
         Image.fromarray(image).save(path)
 
     @staticmethod
-    def _get_time_seed() -> int:
+    def _get_random_seed() -> int:
         """
-        A simple function to generate a seed from the current timestamp.
+        A simple function to generate a seed from the os` randomness.
 
-        :returns: A seed based on the timestamp.
+        :returns: A random seed.
         """
-        now = datetime.now()
-        return int(round(now.timestamp()))
+        return int.from_bytes(os.urandom(4), "little")
 
     @staticmethod
     def _assure_rgb(image: Tensor) -> Tensor:

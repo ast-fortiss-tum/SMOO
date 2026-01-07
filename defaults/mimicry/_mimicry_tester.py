@@ -21,7 +21,7 @@ from src.manipulator.style_gan_manipulator import (
 )
 from src.objectives import CriterionCollection
 from src.optimizer import Optimizer
-from src.sut import SUT
+from src.sut import SUT, BinaryClassifierSUT, ClassifierSUT
 
 from ._default_df import DefaultDF
 from ._experiment_config import ExperimentConfig
@@ -115,29 +115,50 @@ class MimicryTester(SMOO):
             Note this can be extended to any n predictions, but for this approach we limited it to 2.
             Additionally this can be generalized to N w0 vectors, but now we only consider one.
             """
-            first, second, *_ = torch.argsort(w0_ys, descending=True)[0]
+            initial_pred = torch.argsort(w0_ys, descending=True)[0]
             self._img_rgb = w0_images[0]
 
-            exclude = [first.item()] if (unique_generation and class_idx != -1) else list()
+            """Specific logic for torch-loss based objectives and logit based termination."""
+            if isinstance(self._sut, ClassifierSUT):
+                target = int(initial_pred[1].item())
+                # Terminates early if the prediction is the target.
+                self.found_solution_func = lambda curr: (curr.argmax() == target).any().item()
+                self.loss_target = torch.tensor([target], device=w0_ys.device)
+            elif isinstance(self._sut, BinaryClassifierSUT):
+                control = (w0_ys > 0).float()
+                target = 1 - control[:, class_idx].float()
+                control[:, class_idx] = target
+                self.loss_target = control
+
+                # Terminates early if the sign flipped.
+                self.found_solution_func = (
+                    lambda curr: (curr[:, class_idx] > 0).float().eq(target).any().item()
+                )
+
+            exclude = (
+                [initial_pred[0].item()] if (unique_generation and class_idx != -1) else list()
+            )
             wn_tensors, wn_images, wn_ys, wn_trials = (
                 self._generate_noise(self._num_ws)
                 if validity_domain
                 else self._generate_seeds(
                     self._num_ws,
-                    second.item() if self._config.conditional else -1,
+                    initial_pred[1].item() if self._config.conditional else -1,
                     exclude=exclude,
+                    prev_pred=w0_ys,
                 )
             )
-            second, *_ = torch.argsort(wn_ys, descending=True)[0]
             """
             Note that the w0s and ws' do not have to share a label, but for this implementation we do not control the labels separately.
             """
             # We parse the cached tensors of w vectors as we generated them already for getting the initial prediction.
             w0c = [
-                MixCandidate(label=first.item(), is_w0=True, w_tensor=tensor)
+                MixCandidate(label=initial_pred[0].item(), is_w0=True, w_tensor=tensor, y=class_idx)
                 for tensor in w0_tensors
             ]
-            wsc = [MixCandidate(label=second.item(), w_tensor=tensor) for tensor in wn_tensors]
+            wsc = [
+                MixCandidate(label=initial_pred[1].item(), w_tensor=tensor) for tensor in wn_tensors
+            ]
             candidates = MixCandidateList(*w0c, *wsc)
 
             # Track generation history for comprehensive logging
@@ -158,7 +179,7 @@ class MimicryTester(SMOO):
                 )
 
                 images, fitness, preds, term_cond, gen_data = self._inner_loop(
-                    candidates, first.item(), second.item(), gen + 1
+                    candidates, initial_pred, gen + 1
                 )
                 budget_used += images.shape[0]  # Add budget based on how many images are evaluated
                 all_gen_data.append(gen_data)
@@ -178,7 +199,7 @@ class MimicryTester(SMOO):
             else:
                 # Evaluate the last generation.
                 images, fitness, preds, term_cond, gen_data = self._inner_loop(
-                    candidates, first.item(), second.item(), self._config.generations
+                    candidates, initial_pred[0], self._config.generations
                 )
                 budget_used += images.shape[0]
                 all_gen_data.append(gen_data)
@@ -188,7 +209,7 @@ class MimicryTester(SMOO):
 
             """Save data."""
             log_dir = os.path.join(
-                script_dir, f"runs/{self._config.save_as}_class_{first.item()}_{time()}"
+                script_dir, f"runs/{self._config.save_as}_class_{class_idx}_{time()}"
             )
             os.makedirs(log_dir, exist_ok=True)
 
@@ -204,12 +225,12 @@ class MimicryTester(SMOO):
                 "w0_predictions": w0_ys.cpu().squeeze().tolist(),
                 "wn_predictions": wn_ys.cpu().squeeze().tolist(),
                 "budget_used": budget_used,
-                "expected_target": second.item(),
+                "expected_target": initial_pred[1].item(),
                 "seed": seeds[sample_id],
             }
 
             # Save the best candidates and their data
-            if self._term_early and term_cond is not None:
+            if term_cond:
                 """Here we save all elements that satisfy a termination condition."""
                 indices = np.arange(term_cond.shape[0])[term_cond]
                 for ind in indices:
@@ -226,9 +247,13 @@ class MimicryTester(SMOO):
                     stats[f"best_{i}_fitness"] = list(bc.fitness)
 
             # Save origin and target images
-            self._save_tensor_as_image(self._img_rgb, log_dir + f"/origin_{first.item()}.png")
+            self._save_tensor_as_image(
+                self._img_rgb, log_dir + f"/origin_{initial_pred[0].item()}.png"
+            )
             if wn_images.shape[0] > 0:
-                self._save_tensor_as_image(wn_images[0], log_dir + f"/target_{second.item()}.png")
+                self._save_tensor_as_image(
+                    wn_images[0], log_dir + f"/target_{initial_pred[1].item()}.png"
+                )
 
             # Save stats as JSON
             with open(f"{log_dir}/stats.json", "w") as f:
@@ -244,16 +269,14 @@ class MimicryTester(SMOO):
     def _inner_loop(
         self,
         candidates: MixCandidateList,
-        c1: int,
-        c2: int,
+        initial_pred: Tensor,
         generation: int,
     ) -> tuple[Tensor, tuple[NDArray, ...], Tensor, Optional[NDArray], dict[str, Any]]:
         """
         The inner loop for the learner.
 
         :param candidates: The mixing candidates to be used.
-        :param c1: The base class label.
-        :param c2: The second most likely label.
+        :param initial_pred: The initial prediction (Classes sorted by probability).
         :param generation: The current generation number.
         :returns: The images generated, the corresponding fitness, the softmax predictions, termination condition, and generation data.
         """
@@ -281,20 +304,27 @@ class MimicryTester(SMOO):
         origin_batch = self._img_rgb.expand(images_tensor.shape[0], *self._img_rgb.shape[1:])
 
         self._objectives.evaluate_all(
-            {
-                "images": [origin_batch, images_tensor],
-                "logits": predictions,
-                "label_targets": [c1, c2],
-                "solution_archive": [],
-                "batch_dim": 0,
-            }
+            images=[origin_batch, images_tensor],
+            logits=predictions,
+            target=self.loss_target.repeat(predictions.size(0), 1),  # Make same as batch size.
+            initial_predictions=initial_pred,
+            solution_archive=list(),
+            batch_dim=0,
+            target_logit=(
+                candidates.w0_candidates[0].y
+                if isinstance(self._sut, BinaryClassifierSUT)
+                else None
+            ),
         )
         results = self._objectives.results
-        fitness = tuple(np.asarray(f) for f in results.values())
+        fitness = tuple(
+            f.cpu().numpy() if isinstance(f, Tensor) else np.asarray(f) for f in results.values()
+        )
 
         early_term, term_cond = self._early_termination(results)
-        self._term_early = early_term
-        if early_term and term_cond:
+        found_solution = self.found_solution_func(predictions)
+        self._term_early = early_term or found_solution
+        if early_term and (term_cond is not None):
             logging.info(f"Early termination condition met by: {term_cond.sum()} individuals")
 
         # Create generation data row for CSV logging
@@ -311,6 +341,8 @@ class MimicryTester(SMOO):
         label: int,
         exclude: Optional[list[int]] = None,
         seed: Optional[int] = None,
+        prev_pred: Optional[Tensor] = None,
+        max_tries: int = 100,
     ) -> tuple[Tensor, Tensor, Tensor, int]:
         """
         Generate seeds for a specific class.
@@ -319,7 +351,10 @@ class MimicryTester(SMOO):
         :param label: The class to be generated.
         :param exclude: A list of classes to exclude.
         :param seed: A seed to be used for reproducibility.
+        :param prev_pred: The previous prediction generated by the previous generation.
+        :param max_tries: The maximum number of attempts to generate seeds.
         :returns: The generated w vectors, the corresponding images, confidence values and the amount of trials needed.
+        :raises NotImplementedError: This method is not implemented.
         """
         exclude = exclude or list()
 
@@ -327,27 +362,75 @@ class MimicryTester(SMOO):
         imgs: list[Tensor] = []
         y_hats: list[Tensor] = []
 
-        logging.info(f"Generate seed(s) for class: {label}.")
-        # For logging purposes to see how many samples we need to find valid seed.
-        trials = 0
-        seed = seed or self._get_time_seed()
-        while len(ws) < amount:
-            # We generate w latent vector.
-            w = self._manipulator.get_w(seed + trials, label)  # Adding trial.
-            trials += 1
-            seed = self._get_time_seed()  # If the initial seed fails, we fall back to random.
-            # We generate and transform the image to RGB if it is in Grayscale.
-            img = self._manipulator.get_images(w)
-            img = self._assure_rgb(img)
-            y_hat = self._process(img)
+        fallback_buffer: Optional[tuple[Tensor, Tensor, Tensor, float]] = (
+            None  # (w, img, y_hat, distance_to_flip)
+        )
 
-            # We are only interested in a candidate if the prediction matches the label.
-            exclude_cond = y_hat.argmax().item() not in exclude
-            if ((y_hat.argmax().item() == label) or (label == -1)) and exclude_cond:
+        logging.info(f"Generate seed(s) for class: {label}.")
+        trials = 0
+        seed = seed or self._get_random_seed()
+
+        while len(ws) < amount:
+            current_retries = 0
+
+            while current_retries < max_tries:
+                # We generate w latent vector.
+                w = self._manipulator.get_w(seed + trials, label)  # Adding trial.
+                current_retries += 1
+
+                img = self._manipulator.get_images(w)
+                img = self._assure_rgb(img)
+                y_hat = self._process(img)
+
+                seed = self._get_random_seed()
+
+                if isinstance(self._sut, ClassifierSUT):
+                    # We are only interested in a candidate if the prediction matches the label or label is unconditional.
+                    if ((y_hat.argmax().item() == label) or (label == -1)) and (
+                        y_hat.argmax().item() not in exclude
+                    ):
+                        pass
+                    else:
+                        continue
+                elif isinstance(self._sut, BinaryClassifierSUT):
+                    if prev_pred is None:
+                        pass
+                    else:
+                        current_sign = torch.sign(prev_pred[:, label]).item()
+                        new_sign = torch.sign(y_hat[:, label]).item()
+                        if current_sign != new_sign:
+                            pass
+                        else:
+                            distance_to_flip = abs(y_hat[:, label].item())
+                            if fallback_buffer is None or distance_to_flip < fallback_buffer[3]:
+                                fallback_buffer = (
+                                    w.clone(),
+                                    img.clone(),
+                                    y_hat.clone(),
+                                    distance_to_flip,
+                                )
+                            continue
+                else:
+                    raise NotImplementedError(f"Not defined for {type(self._sut)}")
+
                 ws.append(w)
                 imgs.append(img)
                 y_hats.append(y_hat)
-        logging.info(f"\tFound {amount} valid seed(s) after: {trials} iterations.")
+                fallback_buffer = None  # Reset fallback buffer after successful find
+                break
+
+            trials += current_retries
+
+            if fallback_buffer is not None:
+                logging.warning(
+                    f"\tCould not find seed with opposite sign after {max_tries} attempts. Using closest to flip."
+                )
+                ws.append(fallback_buffer[0])
+                imgs.append(fallback_buffer[1])
+                y_hats.append(fallback_buffer[2])
+                fallback_buffer = None
+
+        logging.info(f"\tFound {len(ws)} valid seed(s) after: {trials} iterations.")
 
         # Convert lists to batched tensors
         ws_tensor = torch.stack(ws)
@@ -365,7 +448,7 @@ class MimicryTester(SMOO):
         """
         logging.info("Generate noise seeds.")
         # For logging purposes to see how many samples we need to find valid seed.
-        w: Tensor = self._manipulator.get_w(self._get_time_seed(), 0)
+        w: Tensor = self._manipulator.get_w(self._get_random_seed(), 0)
         ws = torch.randn((amount, *w.shape), device=w.device)
         images = self._assure_rgb(self._manipulator.get_images(ws))
         y_hats = self._process(images)

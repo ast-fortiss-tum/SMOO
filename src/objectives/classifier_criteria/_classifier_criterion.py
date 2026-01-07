@@ -23,9 +23,9 @@ class ClassifierCriterion(Criterion):
             original_evaluate = self.evaluate
 
             def logged_evaluate(
-                _: Any, *, logits: Tensor, label_targets: list[int], **kwargs: Any
+                _: Any, *, logits: Tensor, **kwargs: Any
             ) -> Union[float, list[float]]:
-                return original_evaluate(logits=logits, label_targets=label_targets, **kwargs)
+                return original_evaluate(logits=logits, **kwargs)
 
             self.evaluate = logged_evaluate.__get__(self, self.__class__)  # type: ignore[method-assign]
 
@@ -36,7 +36,6 @@ class ClassifierCriterion(Criterion):
                 _: Any,
                 *,
                 logits: Tensor,
-                label_targets: list[int],
                 batch_dim: Union[int, None] = None,
                 **kwargs: Any,
             ) -> Union[float, list[float]]:
@@ -44,21 +43,18 @@ class ClassifierCriterion(Criterion):
                     logits = logits.unsqueeze(0)
                 elif batch_dim != 0:
                     logits = logits.transpose(0, batch_dim)
-                results = eval_func(logits=logits, label_targets=label_targets, **kwargs)
+                results = eval_func(logits=logits, **kwargs)
 
                 return results[0] if batch_dim is None and isinstance(results, list) else results
 
             self.evaluate = batched_evaluate.__get__(self, self.__class__)  # type: ignore[method-assign]
 
     @abstractmethod
-    def evaluate(
-        self, *, logits: Tensor, label_targets: list[int], **kwargs: Any
-    ) -> Union[float, list[float]]:
+    def evaluate(self, *, logits: Tensor, **kwargs: Any) -> Union[float, list[float], Tensor]:
         """
         Evaluate the criterion in question.
 
         :param logits: The logits tensor produced by the model.
-        :param label_targets: The actual labels of the predicted elements.
         :param kwargs: Other keyword arguments passed to the criterion.
         :returns: The value(s).
         """

@@ -16,9 +16,14 @@ class DiffusionCandidate(Candidate):
     xt: Tensor  # The diffusion steps (Diffusion Steps x Image Embedding).
     class_embedding: Tensor  # The class embedding (Diffusion Steps x Class Embedding).
     is_origin: bool = False
+    y: Optional[int] = None
+    control: Optional[Tensor] = None  # Control Tensor for HyNeA.
+
+    prompt: Optional[list[str]] = None  # An optional prompt for prompt-based generation.
+    control_signal: Optional[Tensor] = None  # A control signal for ControlNet implementations.
 
     def __post_init__(self) -> None:
-        """Preprocessing of some elements after intialization."""
+        """Preprocessing of some elements after initialization."""
         if isinstance(self.class_embedding, Tensor):
             self.class_embedding = torch.stack(
                 [self.class_embedding.squeeze()] * len(self.xt), dim=0
@@ -46,7 +51,15 @@ class DiffusionCandidateList(CandidateList[DiffusionCandidate]):
         """
         super().__init__(*initial_candidates)
         self._candidates = list(initial_candidates)
-        self._xts = torch.stack([c.xt for c in self._candidates], dim=0)
+
+        if len(self._candidates) > 0:
+            self._xts = torch.stack([c.xt for c in self._candidates], dim=0)
+            self._class_embeddings = torch.stack(
+                [c.class_embedding for c in self._candidates], dim=0
+            )
+        else:
+            self._xts = None
+            self._class_embeddings = None
 
         if separate_candidates:
             self._origin = DiffusionCandidateList(
@@ -55,8 +68,6 @@ class DiffusionCandidateList(CandidateList[DiffusionCandidate]):
             self._target = DiffusionCandidateList(
                 *(c for c in self._candidates if not c.is_origin), separate_candidates=False
             )
-
-        self._class_embeddings = torch.stack([c.class_embedding for c in self._candidates], dim=0)
 
     @property
     def class_embeddings(self) -> Tensor:

@@ -28,7 +28,7 @@ from ._experiment_config import ExperimentConfig
 
 
 class DiffTester(SMOO):
-    """A diffusion-based tester."""
+    """A tester class for mimicry with diffusion models."""
 
     _manipulator: SiTManipulator
     _optimizer: PymooOptimizer
@@ -46,7 +46,7 @@ class DiffTester(SMOO):
         early_termination: TEarlyTermCallable,
     ):
         """
-        Initialize the Diffusion Tester.
+        Initialize the Diffusion-based Tester (mimicry with diffusion)..
 
         :param sut: The system-under-test.
         :param manipulator: The manipulator object.
@@ -194,18 +194,16 @@ class DiffTester(SMOO):
                 xs_new = self._manipulator.manipulate(candidates, xw, yw)
 
                 """We predict the label from the mixed images."""
-                xs = self._manipulator.get_image(xs_new)
+                xs = self._manipulator.get_images(xs_new)
                 predictions = self._process(xs)
                 budget_used += xs.shape[0]  # add budget based on how many images are evaluated.
 
                 self._objectives.evaluate_all(
-                    {
-                        "images": [origin_batch, xs],
-                        "logits": predictions,
-                        "label_targets": class_pair,
-                        "solution_archive": [],
-                        "batch_dim": 0,
-                    }
+                    images=[origin_batch, xs],
+                    logits=predictions,
+                    label_targets=class_pair,
+                    solution_archive=list(),
+                    batch_dim=0,
                 )
                 results = self._objectives.results
 
@@ -266,7 +264,7 @@ class DiffTester(SMOO):
         """
         while True:
             xt, emb = self._manipulator.get_diff_steps([class_id])
-            image = self._manipulator.get_image(xt[-1])
+            image = self._manipulator.get_images(xt[-1])
             y_hat = self._process(image)
             if torch.argmax(y_hat) == class_id:
                 break
